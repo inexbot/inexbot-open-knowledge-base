@@ -137,11 +137,11 @@ def extract_content(html, url):
     if article:
         for tag in article.find_all(["nav", "script", "style", "footer", "aside", "button", "input"]):
             tag.decompose()
-        content_md, keywords_set = _element_to_md(article)
+        content_md, keywords_set = _element_to_md(article, base_url=url)
 
     return {"title": title, "description": description, "content_md": content_md.strip(), "url": url, "keywords": sorted(keywords_set)}
 
-def _element_to_md(element, depth=0):
+def _element_to_md(element, depth=0, base_url=""):
     lines, keywords = [], set()
     for child in element.children:
         if isinstance(child, str):
@@ -190,7 +190,7 @@ def _element_to_md(element, depth=0):
                 lines.append(f"> {ln}")
             lines.append("")
         elif tag in ("p", "div"):
-            inner, ik = _element_to_md(child, depth + 1)
+            inner, ik = _element_to_md(child, depth + 1, base_url)
             if inner.strip():
                 lines.append(inner)
                 keywords.update(ik)
@@ -203,9 +203,10 @@ def _element_to_md(element, depth=0):
             src = child.get("src", "")
             alt = child.get("alt", "")
             if src:
-                lines.append(f"![{alt}]({src})")
+                abs_src = urljoin(BASE_URL, src) if BASE_URL else src
+                lines.append(f"![{alt}]({abs_src})")
         else:
-            inner, ik = _element_to_md(child, depth + 1)
+            inner, ik = _element_to_md(child, depth + 1, base_url)
             if inner.strip():
                 lines.append(inner)
             keywords.update(ik)
