@@ -220,7 +220,7 @@ def build_search_index(pages):
         path = page["path"]
         title = page.get("title", "")
         desc = page.get("description", "")
-        content = page.get("content_md", "")[:500]
+        content = page.get("content_md", "")[:1000]  # 前1000字作摘要
         full_text = f"{title} {desc} {content}"
         words = [w for w in jieba.cut(full_text) if len(w) >= 2]
         word_counts = {}
@@ -228,7 +228,7 @@ def build_search_index(pages):
             word_counts[w] = word_counts.get(w, 0) + 1
         index[path] = {
             "title": title, "description": desc, "path": path,
-            "content_snippet": content[:300],
+            "content_snippet": content[:800],
             "keywords": list(word_counts.keys())[:50],
             "word_counts": word_counts,
         }
