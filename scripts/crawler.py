@@ -51,12 +51,57 @@ def log(msg):
     print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
 
 def slugify(text):
-    return re.sub(r'[<>:\"|?*]', '', text.strip().replace("/", "-").replace("\\", "-"))
+    return re.sub(r'[<>:\|"?*]', '', text.strip().replace("/", "-").replace("\\", "-"))
+
+def _pre_to_md(pre):
+    """Render a <pre> element as a fenced code block.
+
+    VitePress/shiki puts the language on the wrapper <div class="language-xxx">
+    or on <code class="language-xxx">, not necessarily on <pre> itself, so
+    look in all three places before falling back to an untagged fence.
+    """
+    lang = ""
+    for holder in (pre, pre.parent, pre.find("code")):
+        if holder is None:
+            continue
+        for cls in (holder.get("class") or []):
+            if cls.startswith("language-"):
+                lang = cls[len("language-"):]
+                break
+        if lang:
+            break
+    if not lang:
+        for holder in (pre, pre.parent):
+            if holder is None:
+                continue
+            m = re.search(r"language-([A-Za-z0-9+#]+)", str(holder.get("class") or ""))
+            if m:
+                lang = m.group(1)
+                break
+    code = pre.find("code")
+    ct = code.get_text() if code else pre.get_text()
+    return [f"```{lang}", ct.rstrip(), "```", ""]
+
+def _text_without_pre(li):
+    """Return the text of a list item with any embedded <pre> code removed."""
+    clone = BeautifulSoup(str(li), "html.parser")
+    for pre in clone.find_all("pre"):
+        pre.decompose()
+    return clone.get_text(strip=True)
 
 def save_json(obj, path):
+    """
+    原子写入 JSON。
+
+    ⚠️ 必须先写临时文件再 os.replace()：hermes-skill-proxy 每 5 小时读一次
+    index.json，直接 open(path,"w") 会先把文件截断成空，再慢慢写入 ——
+    这期间 proxy 若正好读到，会 json.load() 抛错（进而触发定时重载链断裂）。
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
+    tmp = Path(str(path) + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
 
 def save_yaml(obj, path):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -69,7 +114,10 @@ def fetch_vitepress_metadata():
     log("正在获取 VitePress 站点配置...")
     resp = httpx.get(urljoin(BASE_URL, "/nonexistent-page-test"),
                      headers=HEADERS, timeout=TIMEOUT, follow_redirects=True)
-    resp.raise_for_status()
+    # VitePress returns 404 for nonexistent pages but embeds metadata in the body.
+    # Only raise on server errors (5xx); allow client errors (404 etc.) to proceed.
+    if resp.status_code >= 500:
+        resp.raise_for_status()
     html = resp.text
 
     # 从 404 页面提取 __VP_HASH_MAP__
@@ -102,14 +150,31 @@ def fetch_vitepress_metadata():
                     if "items" in item:
                         collect_links(item["items"])
 
-        theme_cfg = site_data.get("themeConfig", {})
-        sidebar = theme_cfg.get("sidebar", theme_cfg.get("nav", []))
-        if isinstance(sidebar, list):
+        # VitePress i18n sites put themeConfig.sidebar under each locale.
+        # Merge sidebar lists from all locales so we crawl both zh and en pages.
+        locales = site_data.get("locales", {}) or {}
+        theme_cfg_top = site_data.get("themeConfig", {}) or {}
+        sidebar_groups = []
+        if isinstance(locales, dict) and locales:
+            for _loc_key, loc_data in locales.items():
+                if not isinstance(loc_data, dict):
+                    continue
+                loc_tc = loc_data.get("themeConfig", {}) or {}
+                sb = loc_tc.get("sidebar") or loc_tc.get("nav")
+                if isinstance(sb, list):
+                    sidebar_groups.append(sb)
+        else:
+            sb = theme_cfg_top.get("sidebar") or theme_cfg_top.get("nav")
+            if isinstance(sb, list):
+                sidebar_groups.append(sb)
+
+        for sidebar in sidebar_groups:
             for section in sidebar:
-                collect_links(section.get("items", []))
-                for sub in section.get("items", []):
-                    if "items" in sub:
-                        collect_links(sub["items"])
+                collect_links(section.get("items", []) if isinstance(section, dict) else [])
+                if isinstance(section, dict):
+                    for sub in section.get("items", []) or []:
+                        if isinstance(sub, dict) and "items" in sub:
+                            collect_links(sub["items"])
 
     seen, unique = set(), []
     for link in sidebar_links:
@@ -137,6 +202,12 @@ def extract_content(html, url):
     if article:
         for tag in article.find_all(["nav", "script", "style", "footer", "aside", "button", "input"]):
             tag.decompose()
+        # VitePress renders a language badge as <span class="lang">cpp</span> right
+        # before <pre>.  get_text() glues it onto the following code text, which
+        # fabricates identifiers like "cppset_tool_hand_number" (badge "cpp" +
+        # "set_tool_hand_number").  Strip the badges before extracting text.
+        for badge in article.find_all("span", class_="lang"):
+            badge.decompose()
         content_md, keywords_set = _element_to_md(article, base_url=url)
 
     return {"title": title, "description": description, "content_md": content_md.strip(), "url": url, "keywords": sorted(keywords_set)}
@@ -170,17 +241,22 @@ def _element_to_md(element, depth=0, base_url=""):
                     lines.append("| " + " | ".join(c.get_text(strip=True) for c in cells) + " |")
                 lines.append("")
         elif tag == "pre":
-            code = child.find("code")
-            ct = code.get_text() if code else child.get_text()
-            lang = code.get("class", [""])[0].replace("language-", "") if code else ""
-            lines.append(f"```{lang}")
-            lines.append(ct.rstrip())
-            lines.append("```")
-            lines.append("")
+            lines.extend(_pre_to_md(child))
         elif tag in ("ul", "ol"):
             for i, li in enumerate(child.find_all("li", recursive=False), 1):
                 prefix = "- " if tag == "ul" else f"{i}. "
-                lines.append(prefix + li.get_text(strip=True))
+                pre = li.find("pre")
+                if pre is None:
+                    lines.append(prefix + li.get_text(strip=True))
+                    continue
+                # List item that embeds a code block: keep the prose as the list
+                # item and render the code as its own fenced block, instead of
+                # flattening the code into the prose line.
+                prose = _text_without_pre(li)
+                if prose:
+                    lines.append(prefix + prose)
+                for ln in _pre_to_md(pre):
+                    lines.append(("  " + ln) if ln else "")
             lines.append("")
         elif tag == "hr":
             lines.append("---")
