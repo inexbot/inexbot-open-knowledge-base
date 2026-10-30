@@ -33,6 +33,26 @@ hermes-skill-proxy.py ──search_all_kb()──▶ content_snippet 注入 syst
 `800` 是 `index.json` 里 `content_snippet` 的硬上限，**是个特征值**：
 「恰好等于 800」几乎必然是摘要兜底，不是巧合。
 
+### ⚠️ 短正文（`< 800`）还要再看一层：md 实际字节数（2026-10-29 补充）
+
+`verify_kb.py` 输出的 `note: 短 snippet 247 inexbot / ... ← 疑似静默降级`
+只是「长度 < 800」的粗筛，**不等于有 BUG**。真正的判别是看 md 文件的实际字节数：
+
+| `snippet_len` | md 实际字节数 | 结论 |
+|---|---|---|
+| `== 800` | — | **静默降级**（index 摘要兜底）→ BUG |
+| `< 800` | `== snippet_len` | **正文已完整读取**，只是这一页本身就很短（FAQ 页）→ 正常 |
+| `< 800` | `> snippet_len` | 部分读取 → 查 slug 契约 |
+
+2026-10-29 实测（姊妹 KB）：5 条 note 全部满足 `md_bytes == snippet_len`
+（247 / 277 / 418 / 440 / 468 字节），即**磁盘正文被完整取出**，
+是「示教器无法开机」「伺服错误」这类本身就两三行的 FAQ 页 → **无 BUG**。
+
+> 💡 核验脚本见姊妹 skill
+> `inexbot-knowledge-base/references/proxy-memory-vs-disk-comparison.md`
+> （也收录了姊妹 KB 现场更正的两条：内存索引必须**token 级**比对、
+> 手写 slug 检查会崩在 `OSError [Errno 36]`）。
+
 ## 两个 KB 共用同一个函数 —— 必须一起验
 
 `hermes-skill-proxy` 同时服务 `inexbot`（doc.inexbot.com）和 `inexbot-open`

@@ -21,7 +21,8 @@ VitePress 站点，https://open.inexbot.com
 
 import os, sys, re, json, time, hashlib, datetime
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urljoin, unquote
+from html import unescape
 
 import httpx, jieba, yaml
 from bs4 import BeautifulSoup
@@ -88,6 +89,36 @@ def _text_without_pre(li):
     for pre in clone.find_all("pre"):
         pre.decompose()
     return clone.get_text(strip=True)
+
+# 零宽字符：U+200B / U+200C / U+200D（零宽空格/非连接符/连接符）+ BOM
+# 用显式转义而不是字面量 —— 字面零宽字符在源码里不可见，容易被误删/被编辑器吞掉。
+_ZERO_WIDTH = "[" + "".join(chr(c) for c in (0x200B, 0x200C, 0x200D, 0xFEFF)) + "]"
+
+def clean_text(s: str) -> str:
+    """
+    清洗文本：去掉零宽字符（U+200B 等）、NBSP 和行尾空白。
+
+    open.inexbot.com 的 <h1> 普遍带一个 U+200B 零宽空格（VitePress 编辑器残留），
+    例如 'C++ 上位机开发\\u200b'。不去掉的话：
+      1. 每个注入给 LLM 的标题末尾都挂一个不可见字符，引用链接显示时带怪字符；
+      2. 标题分词时 jieba 会把 U+200B 单独切成一个 token（len=1，被
+         `len(w) >= 2` 过滤掉，影响有限），但对展示和精确匹配仍有干扰。
+
+    注意：只去零宽字符 + 行尾空白，**不压缩内部空格/制表符** —— 正文含代码块，
+    压缩缩进会破坏代码内容。
+
+    （姊妹 KB inexbot-knowledge-base 的 crawler.py 已有同名实现并先行落地，
+      本函数是同步过来的，两边行为保持一致。）
+    """
+    if not s:
+        return ""
+    # 零宽字符 + BOM：直接删除（不是替换成空格，避免把词切开）
+    s = re.sub(_ZERO_WIDTH, "", s)
+    # NBSP 不换行空格 → 普通空格（中文正文里常出现）
+    s = s.replace("\xa0", " ")
+    # 行尾空白
+    s = "\n".join(line.rstrip() for line in s.split("\n"))
+    return s.strip()
 
 def save_json(obj, path):
     """
@@ -190,9 +221,35 @@ def fetch_vitepress_metadata():
 def extract_content(html, url):
     soup = BeautifulSoup(html, "html.parser")
     h1 = soup.find("h1")
-    title = h1.get_text(strip=True) if h1 else ""
+    title = clean_text(h1.get_text(strip=True)) if h1 else ""
     desc_tag = soup.find("meta", attrs={"name": "description"})
     description = desc_tag["content"].strip() if desc_tag and desc_tag.get("content") else ""
+
+    # 标题兜底：open.inexbot.com 上有 34 个「分类索引页」没有 <h1>
+    # （如 /zh/06.控制器/01.文档/、/zh/07.示教器/04.参考/变更日志），
+    # 它们在 sidebar 里有链接、正文却是空的（上游就是空目录页）。
+    # 标题为空 = 丢掉 proxy 检索的标题权重（标题 ×3 / 短语命中 ×20），
+    # 这些页只能靠 description（"纳博特科技官方SDK文档"）勉强参与匹配。
+    # 这里依次回退 og:title → URL 末段 → description。
+    if not title:
+        og = soup.find("meta", attrs={"property": "og:title"})
+        if og and og.get("content"):
+            title = clean_text(og["content"])
+
+    if not title:
+        # URL 末段就是文档真实名称（如 '错误码表'），比通用 description 更贴题
+        seg = unquote(url.rstrip("/").split("/")[-1]) if url.rstrip("/") else ""
+        seg = unescape(seg)          # &amp; → &
+        seg = clean_text(seg)
+        seg = re.sub(r"\.html?$", "", seg).strip()
+        if seg and not seg.lower().startswith(("readme", "index")):
+            title = seg[:120]
+
+    if not title:
+        cand = clean_text(description)[:120]
+        # 通用描述（如 '纳博特科技官方SDK文档'）信息量太低，跳过
+        if cand and cand != "纳博特科技官方SDK文档" and cand.lower() != "not found":
+            title = cand
 
     article = soup.find("article", class_="page") or \
               soup.find("div", id="content-container") or \
@@ -210,7 +267,7 @@ def extract_content(html, url):
             badge.decompose()
         content_md, keywords_set = _element_to_md(article, base_url=url)
 
-    return {"title": title, "description": description, "content_md": content_md.strip(), "url": url, "keywords": sorted(keywords_set)}
+    return {"title": title, "description": description, "content_md": clean_text(content_md.strip()), "url": url, "keywords": sorted(keywords_set)}
 
 def _element_to_md(element, depth=0, base_url=""):
     lines, keywords = [], set()
