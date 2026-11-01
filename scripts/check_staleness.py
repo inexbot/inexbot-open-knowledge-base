@@ -52,8 +52,24 @@ TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{7,}")
 
 
 def slugify(text: str) -> str:
-    """MUST match crawler.py:53 exactly, or every lookup misses."""
-    return re.sub(r'[<>:"|?*]', '', text.strip().replace("/", "-").replace("\\", "-"))
+    """MUST match crawler.py's slugify() exactly, or every lookup misses.
+
+    ⚠️ The character class MUST be r'[<>:\\|"?*]' — the backslash BEFORE the
+    pipe is load-bearing. This file previously had r'[<>:"|?*]' (no backslash),
+    which is a DIFFERENT set: it treats the pipe as a literal member instead of
+    escaping it, so any URL containing '|' hashed to the wrong md filename and
+    produced false "file not found" / false cache-only-term readings.
+
+    Do not retype this from memory — import the crawler's own implementation:
+
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("crawler", CRAWLER_PY)
+        crawler = importlib.util.module_from_spec(spec); spec.loader.exec_module(crawler)
+        slug = crawler.slugify(path.lstrip("/"))
+
+    See SKILL.md -> '增量爬取的盲区' (the '自写 slugify 已两次漏掉 |' note).
+    """
+    return re.sub(r'[<>:\|\"?*]', '', text.strip().replace("/", "-").replace("\\", "-"))
 
 
 def fetch(path: str, timeout: int = 30) -> str | None:

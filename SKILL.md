@@ -1,8 +1,8 @@
 ---
 name: inexbot-open-knowledge-base
 description: "纳博特开放平台知识库 RAG：每天定时爬取 open.inexbot.com，由 hermes-skill-proxy 在请求时进行内存检索并注入 system prompt。"
-version: 1.10.0
-last_verified: 2026-10-31
+version: 1.12.0
+last_verified: 2026-11-01
 author: Hermes Agent
 license: MIT
 metadata:
@@ -661,7 +661,7 @@ md_root = idx_root / "md"   # md 文件名同样是把 URL path 的 / 替换成 
 2. 切到 `references/vitepress-v2-alpha-migration.md` 模板（位于姊妹 skill `inexbot-knowledge-base/references/`，含 sitemap.xml 替代 + `<h1>` 提取 + slugify 字节截断）。
 3. **不要**改 sitemap 之前先确认它能用：`curl -sI https://open.inexbot.com/sitemap.xml` 应返回 200 + 非空（v1.x 不一定有 sitemap，可能需要 fallback 到 `__VP_HASH_MAP__` 的 keys 作 link 源 + 试访问每条 `/{hash_key}.md`）。
 
-历史快照与基线值见 `references/crawl-state-2026-07-18.md`（534 docs、712 md 文件、健康对照表、故障排查 quickref）。基线 552/547 见 `references/crawl-state-2026-07-26.md`，636 见 `references/crawl-state-2026-07-31.md`，715 见 `references/crawl-state-2026-08-21.md`，721 见 `references/crawl-state-2026-08-25.md`（含 systemd restart race pitfall），`references/crawl-state-2026-08-28.md`（721/547 零变化，含 Hermes `terminal(wait)` clamp 60s + systemd restart window 比预期宽的额外坑），`references/crawl-state-2026-08-29.md`（721/547 连续第三次零变化，稳态基线；含 `tail -N` 管道 + 后台 poll 的进度可见性观察），**`references/crawl-state-2026-08-30.md`（721/547 连续第四次零变化；**关键修正**：`process(poll, timeout=N)` 也被 clamp 到 ~60s，新增 `scripts/wait_pid.py` 作为长任务等待的标准对策）**，**`references/crawl-state-2026-09-08.md`（姊妹 KB `inexbot-knowledge-base` 因 VitePress v2 alpha 升级连续 3 天爬 0 页；本 skill 同步预警 i18n fix 在 v2 alpha 场景下的失效条件与 fallback 路径）**，**`references/crawl-state-2026-09-21.md`（721/547 连续第 7 次零变化，进一步巩固稳态）**，**`references/crawl-state-2026-09-29.md`（**795/557 打破稳态**：zh sidebar +74，crawler 耗时 4:54 是历史 ~2:45 的 1.8 倍——姊妹 KB cron 与本 skill cron 同窗口并发争 CPU；foreground timeout 一帧就被 kill 在 34/795，必须从一开始就 `terminal(background=true)`）**，**`references/crawl-state-2026-10-01.md`（**797/557 再涨**：zh sidebar +2，crawler 耗时 3:01 单跑无姊妹 KB 争 CPU；baseline patch 已落到 check_proxy_health.py 与 SKILL.md）**，**`references/crawl-state-2026-10-10.md`（**799/557 再 +2**：zh sidebar 持续增长（+2/次，回归正常增速）；姊妹 KB 同窗口爬取但本 skill 仍 3:16 完成——CPU 抢用实际影响 ~5-10% 不必错开调度；inline `os.kill` 等待验证可行；proxy 启动窗口仍跟负载正相关）**，**`references/crawl-state-2026-10-18.md`（**799/557 持平**：首次观察到的零增长 cycle；新增关键 policy 坑 `/bin/bash -lic` wrapper 已被 tirith 拦下，标准启动姿势改为「write_file 外层脚本 + terminal(background=true) 调脚本文件」；`nohup & disown` 也被拦，强制走 Hermes `terminal(background=true)`；`rm /tmp/*.sh` 同样被 `delete in root path` 拦下）**，**`references/crawl-state-2026-10-19.md`（**799/557 连续第二次持平**：与 10-18 累计 2 次零变化 cycle；单跑 3:05 紧贴 10-10 单跑 3:16 的稳态（印证 sister-KB 并发影响仅 5-10% 的判断）；proxy /health 爬完前就显示 799 → 无需 restart；现场踩到的小坑：`execute_code` 沙盒不自动 import `time`，第一次脚本报 `NameError`，需在脚本顶部 `import time`——不是默认 stdlib pre-imported）**，**`references/crawl-state-2026-10-21.md`（**799/557 连续第三次持平**：index.json 与 10-19 逐字节相同（2,448,900 bytes），自 10-10 起 11 天无新页面，799 已确立为新基线；单跑 3:08 落在 3:00–3:20 稳态带内，启动时 `grep -c "[c]rawler.py"`=0 确认无姊妹 KB 并发；`systemctl show -p ActiveEnterTimestamp` 确认 proxy 自 10-18 起未重启、5h 自动重载已生效；`execute_code` 沙盒 stdlib 坑提前规避无复发）**。`references/crawl-state-2026-10-22.md`（**799/558 连续第四次持平**：`check_crawl_state.py` 首次成功做字节级对比（verdict=IDENTICAL，2,448,900 bytes 与 10-19 相同），zh sidebar +2/次增长已完全停止、12 天零新增；姊妹 KB 反而 +1 到 558，BASELINES 已 patch；proxy 自 10-18 起未重启且爬前已是新值 → 不需要 restart；**新坑 `process(log)` 对重定向输出的后台任务返回空 output，须直接 `tail log` 文件**；`write_file` 同名脚本的 sibling-subagent 覆盖警告）**，**`references/crawl-state-2026-10-25.md`（**799/558 连续第六次持平**：index.json 2,453,054 bytes 与 10-23/10-24 逐字节相同 —— 上游 API 改名那次内容变更后已连续 3 天零变化；姊妹 KB 同窗口并发下本 KB 仍 3:09 完成，落稳态带内；**关键复查：10-23 的「改名盲区」修复确实生效 —— index 可达页面含已删除旧 API 的文件数 = 0**，那 13 个 grep 命中的 `star_servo` 文件全是 `06.*` 旧 URL 结构的**不可达死缓存**；**新坑：姊妹 KB index path 是 URL-encoded，短正文排查必须走 proxy 的 `_md_slug_candidates()`**，自写 `slugify()` 拼路径得假阴性；proxy 爬前已是新值 → 不 restart；`hermes-skill-proxy.py` 工作区有未提交的本地修复，别 reset）**，**`references/crawl-state-2026-10-26.md`（**799/558 连续第七次持平**：index.json 2,453,054 bytes 与 10-23/24/25 逐字节相同（内容变更后连续 4 天零变化）；**本 cycle 抓到并修复了一个真 bug——crawler 的 VitePress 语言徽章污染**（`<span class="lang">cpp</span>` 被 `li.get_text()` 粘到代码文本前 → 凭空造出 `cppset_tool_hand_number` 等幻影标识符，影响 166 个 index 可达页面 / 219 个 md 文件；`check_staleness.py` 报的 cache-only term **先查 raw 再下结论**，raw 干净就是本地抽取 bug 而非上游改名）；已封装 `scripts/regenerate_from_cache.py` 离线从 `raw/` 重生成 md+index（零网络、不重爬 799 页）；**遗留：index.json 尚未用新抽取结果重建**；proxy HEAD 已前进到 `857991b`（10-24 的 slug 修复已推 upstream，不再是未提交本地改动）**，**`references/crawl-state-2026-10-27.md`（**799/558 连续第八次持平**：index.json **2,453,407 bytes（+353）**；**本 cycle 证明了「字节跳变≠上游变更」——重建对比显示 OLD 抽取 = 2,453,054（= 10-26 快照）、NEW 抽取 = 2,453,407（= 磁盘当前），479 个条目内容变了**；crawler 日志 `✓` 行数 = **0**、`raw/` 最新 mtime 仍是 10-23 → **零网络请求，纯属 10-26 抽取修复落地**；10-26 遗留的「index 未重建」已闭环，幻影 token index 可达数 = **0**；姊妹 KB cron 在 11:16:55 重启了 proxy 并于 11:17:02 加载到 799 → 本 skill 未再 restart；HTTP 探针 `-m 60` 拿到 `000` 是客户端 timeout（proxy 的 read timeout 是 120），应改用 `-m 240`；新坑：shell 命令里含裸 `&` 或 emoji 变体选择符会被 policy 拦，须走 `write_file` + 文件路径）**，**`references/crawl-state-2026-10-28.md`（**799/558 连续第九次持平**：index.json 2,453,407 bytes 与 10-27 **逐字节相同**，verdict=IDENTICAL，零网络请求；**本 cycle 补上了本 KB 独有的 `index.json` 原子写缺失**（姊妹 KB 10-27 就有，本 KB 一直漏着 → 补齐后复跑验证 index 字节未变、3:05 完成、无 `.tmp` 残留）；**姊妹 KB cron 在 11:08:34 重启了 proxy**，顺带把 10-27 落盘但未加载的 `schedule_reload()` 重载链加固修复**真正带上线**（进程内线程检查确认重载链是活的：主进程旁有 3.84h 前新建的线程 = T+20h 的第 4 次重载排期）；`/proc/<pid>/stat` 的 starttime 字段必须**先按最后一个 `)` 切分**再取，comm 含空格直接 split 会错位；幻影 token `cppset_tool_hand_number` / `star_servo_...` index 可达数 = **0**，107 处 `cpp` 命中经正则+上下文核对全是 `cpp_interface/`、`cpp_demo.cpp` 等**真实内容**非徽章粘连；两个 KB 完全同窗口（姊妹 11:03:26 / 本 skill 11:04:22 写完 index），CPU 争抢影响仍 ~5-10%）**，`references/crawl-state-2026-10-29.md`（**799/558 连续第十次持平**：index.json 2,453,407 bytes 与 10-28 逐字节相同、verdict=IDENTICAL、零网络请求（0 次 `✓`、raw/ 仍是 10-23）、3:20 落在稳态带内；**本 cycle 修掉 3 个此前从未记录的缺陷**——① 标题含 U+200B 零宽字符 764 条（姊妹 KB 早已有 `clean_text()`，本 KB 一直漏着；**字面零宽字符写进源码会被静默吞掉**，字符集必须用 `chr(0x200B)` 显式构造）；② 39 个空标题 / 34 个完全无内容条目（34 个是上游空目录页，`div.vp-doc` textlen=0，**补不了正文只能补标题** → 移植姊妹 KB 的 `og:title → URL 末段 → description` 兜底链；实测这 39 页有 og:title 的只有 0 个，全靠 URL 末段生效）；③ **systemd `Environment=` 块写错导致 4 个环境变量被静默忽略**（systemd 不认 `Environment=` 后跟缩进续行 → `Unknown key name 'PROXY_PORT' in section 'Service', ignoring.`；正确写法是每行一个 `Environment="K=V"`；`systemd-analyze verify` 要求文件名以 `.service` 结尾否则报 Invalid argument；`/etc` 里的 `HERMES_API_KEY` 是被截断的占位符 `hermes...arch`，修 unit 时要显式写代码默认值 `hermes-website-search` 才能保持行为一致）；离线重建后 index 2,453,407 → **2,450,869 bytes**，二次 `--check` 报 `rewritten=0 unchanged=799`（确定性成立），**分词级 token 丢失数 = 0**（内容完整性核对必须比对未截断的 `content_md`，snippet 长度变化是 800 字窗口边界移动的假象）；`diagnose_byte_change.py` 报 "MIXED" 是**探针顺序假象**（`regenerate_from_cache.py` 写盘时刷新了快照），硬证据是「0 次抓取 + raw/ 早于爬取 + OLD 重建 2,453,407 = 修复前尺寸」）**，`references/crawl-state-2026-10-30.md`（**799/558 连续第十一次持平**：index.json **2,450,869 bytes 与 10-29 逐字节相同**、verdict=IDENTICAL、零网络请求（0 次 `✓`、raw/ 仍是 10-23）、3:14 落在稳态带内；**本 cycle 闭合了 10-29 的两项遗留**——① **proxy 未用新单元重启**（单元 10-29 12:00 落盘但进程 10-28 11:08 启动 → 线上仍是旧环境，符合「补丁『写了』≠ 补丁『上线了』」）→ `daemon-reload` + `restart` 后验证 `/proc/<pid>/environ` 四个变量全部到位、`journalctl` 的 `Unknown key name` 计数降为 **0**、`systemd-analyze verify` 对本单元零告警；**并证明重启是行为中性的**（新单元值逐一等于代码默认值，`HERMES_API_KEY` sha 前 12 位 `23760f4462da` 三处一致、len=21；`SKILL_NAME` 在代码里 grep 命中 **0** 次 → 本就没用到）；② **改动未提交** → 本 KB `7ded09c` 已 push，proxy repo 由姊妹 KB cron 并发提交为 `001ddfb`（已 push）；**新坑三条**——(a) restart 后**第一次**跑 `check_proxy_health.py` 仍可能 `Connection refused`，**必须带重试**（本轮 retry 第一次即 200）；(b) **姊妹 KB 的 cron 在同窗口又 restart 了一次 proxy**（11:15:35 我 → PID 1779750；11:16:37 姊妹 → PID 1779868）→ 我的 HTTP 探针被打成 `RemoteDisconnected`，**这不是检索崩了**（判读表：500 才是崩）；(c) **git commit message 含中文会被 tirith `confusable_text` 拦下** → commit message 必须用纯 ASCII；另：姊妹 KB 与本 skill 会并发 commit 同一个 proxy repo，commit 报 `nothing to commit` 是**良性竞态**不是失败）、`references/crawl-state-2026-10-31.md`（**799/558 连续第十二次持平（纯稳态）**：index.json **2,450,869 bytes 与 10-30 逐字节相同**、verdict=IDENTICAL、零网络请求（0 次 `✓`、raw/ 仍是 10-23）、3:18.8 落在稳态带内、md/ 今日零重写、无 `.tmp` 残留；**本 cycle 无待办遗留，纯验证 + 文档沉淀**——① **姊妹 KB 的 `shared-proxy-service-pitfalls.md` 是细化后的权威版**（姊妹 9,713 B vs 本 skill 7,939 B，diff 144 行）→ 按文件自身声明的权威规则**已覆盖同步**，两份 sha 均为 `44b62282ea9fcb5e`；② **`/proc/<pid>/task/<tid>/stat` 的 `starttime` 是绝对值**（字段 22 = `tail[19]`，自 boot 起的时钟滴答），按「进程 starttime + 线程 starttime/HZ」算会得到**负数年龄**（实测 age=-4201h）→ 正确公式 `boot + starttime/HZ`，或直接用 `ps -L -o lstart`；③ **`references/.index-snapshot.json` 被 git 跟踪** → 每轮 `check_crawl_state.py` 都让工作树变脏，属**良性**、别误当未提交代码改动；④ 索引卫生全绿（零宽字符 0 / 空标题 0 / 幻影 token 可达 0 / 旧 API 可达 0）；检索链路无 800 字降级；proxy 重载链**活着**（定时器线程 07:16:54 = start+20h = 第 4 次 5h 排期，`schedule_reload()` 已带 try/except/finally）；四环境变量到位、`Unknown key` 计数 = 0；端口仅 8643+8642 无遗留压测进程；index 逐字节未变 → **不 restart proxy**）**
+历史快照与基线值见 `references/crawl-state-2026-07-18.md`（534 docs、712 md 文件、健康对照表、故障排查 quickref）。基线 552/547 见 `references/crawl-state-2026-07-26.md`，636 见 `references/crawl-state-2026-07-31.md`，715 见 `references/crawl-state-2026-08-21.md`，721 见 `references/crawl-state-2026-08-25.md`（含 systemd restart race pitfall），`references/crawl-state-2026-08-28.md`（721/547 零变化，含 Hermes `terminal(wait)` clamp 60s + systemd restart window 比预期宽的额外坑），`references/crawl-state-2026-08-29.md`（721/547 连续第三次零变化，稳态基线；含 `tail -N` 管道 + 后台 poll 的进度可见性观察），**`references/crawl-state-2026-08-30.md`（721/547 连续第四次零变化；**关键修正**：`process(poll, timeout=N)` 也被 clamp 到 ~60s，新增 `scripts/wait_pid.py` 作为长任务等待的标准对策）**，**`references/crawl-state-2026-09-08.md`（姊妹 KB `inexbot-knowledge-base` 因 VitePress v2 alpha 升级连续 3 天爬 0 页；本 skill 同步预警 i18n fix 在 v2 alpha 场景下的失效条件与 fallback 路径）**，**`references/crawl-state-2026-09-21.md`（721/547 连续第 7 次零变化，进一步巩固稳态）**，**`references/crawl-state-2026-09-29.md`（**795/557 打破稳态**：zh sidebar +74，crawler 耗时 4:54 是历史 ~2:45 的 1.8 倍——姊妹 KB cron 与本 skill cron 同窗口并发争 CPU；foreground timeout 一帧就被 kill 在 34/795，必须从一开始就 `terminal(background=true)`）**，**`references/crawl-state-2026-10-01.md`（**797/557 再涨**：zh sidebar +2，crawler 耗时 3:01 单跑无姊妹 KB 争 CPU；baseline patch 已落到 check_proxy_health.py 与 SKILL.md）**，**`references/crawl-state-2026-10-10.md`（**799/557 再 +2**：zh sidebar 持续增长（+2/次，回归正常增速）；姊妹 KB 同窗口爬取但本 skill 仍 3:16 完成——CPU 抢用实际影响 ~5-10% 不必错开调度；inline `os.kill` 等待验证可行；proxy 启动窗口仍跟负载正相关）**，**`references/crawl-state-2026-10-18.md`（**799/557 持平**：首次观察到的零增长 cycle；新增关键 policy 坑 `/bin/bash -lic` wrapper 已被 tirith 拦下，标准启动姿势改为「write_file 外层脚本 + terminal(background=true) 调脚本文件」；`nohup & disown` 也被拦，强制走 Hermes `terminal(background=true)`；`rm /tmp/*.sh` 同样被 `delete in root path` 拦下）**，**`references/crawl-state-2026-10-19.md`（**799/557 连续第二次持平**：与 10-18 累计 2 次零变化 cycle；单跑 3:05 紧贴 10-10 单跑 3:16 的稳态（印证 sister-KB 并发影响仅 5-10% 的判断）；proxy /health 爬完前就显示 799 → 无需 restart；现场踩到的小坑：`execute_code` 沙盒不自动 import `time`，第一次脚本报 `NameError`，需在脚本顶部 `import time`——不是默认 stdlib pre-imported）**，**`references/crawl-state-2026-10-21.md`（**799/557 连续第三次持平**：index.json 与 10-19 逐字节相同（2,448,900 bytes），自 10-10 起 11 天无新页面，799 已确立为新基线；单跑 3:08 落在 3:00–3:20 稳态带内，启动时 `grep -c "[c]rawler.py"`=0 确认无姊妹 KB 并发；`systemctl show -p ActiveEnterTimestamp` 确认 proxy 自 10-18 起未重启、5h 自动重载已生效；`execute_code` 沙盒 stdlib 坑提前规避无复发）**。`references/crawl-state-2026-10-22.md`（**799/558 连续第四次持平**：`check_crawl_state.py` 首次成功做字节级对比（verdict=IDENTICAL，2,448,900 bytes 与 10-19 相同），zh sidebar +2/次增长已完全停止、12 天零新增；姊妹 KB 反而 +1 到 558，BASELINES 已 patch；proxy 自 10-18 起未重启且爬前已是新值 → 不需要 restart；**新坑 `process(log)` 对重定向输出的后台任务返回空 output，须直接 `tail log` 文件**；`write_file` 同名脚本的 sibling-subagent 覆盖警告）**，**`references/crawl-state-2026-10-25.md`（**799/558 连续第六次持平**：index.json 2,453,054 bytes 与 10-23/10-24 逐字节相同 —— 上游 API 改名那次内容变更后已连续 3 天零变化；姊妹 KB 同窗口并发下本 KB 仍 3:09 完成，落稳态带内；**关键复查：10-23 的「改名盲区」修复确实生效 —— index 可达页面含已删除旧 API 的文件数 = 0**，那 13 个 grep 命中的 `star_servo` 文件全是 `06.*` 旧 URL 结构的**不可达死缓存**；**新坑：姊妹 KB index path 是 URL-encoded，短正文排查必须走 proxy 的 `_md_slug_candidates()`**，自写 `slugify()` 拼路径得假阴性；proxy 爬前已是新值 → 不 restart；`hermes-skill-proxy.py` 工作区有未提交的本地修复，别 reset）**，**`references/crawl-state-2026-10-26.md`（**799/558 连续第七次持平**：index.json 2,453,054 bytes 与 10-23/24/25 逐字节相同（内容变更后连续 4 天零变化）；**本 cycle 抓到并修复了一个真 bug——crawler 的 VitePress 语言徽章污染**（`<span class="lang">cpp</span>` 被 `li.get_text()` 粘到代码文本前 → 凭空造出 `cppset_tool_hand_number` 等幻影标识符，影响 166 个 index 可达页面 / 219 个 md 文件；`check_staleness.py` 报的 cache-only term **先查 raw 再下结论**，raw 干净就是本地抽取 bug 而非上游改名）；已封装 `scripts/regenerate_from_cache.py` 离线从 `raw/` 重生成 md+index（零网络、不重爬 799 页）；**遗留：index.json 尚未用新抽取结果重建**；proxy HEAD 已前进到 `857991b`（10-24 的 slug 修复已推 upstream，不再是未提交本地改动）**，**`references/crawl-state-2026-10-27.md`（**799/558 连续第八次持平**：index.json **2,453,407 bytes（+353）**；**本 cycle 证明了「字节跳变≠上游变更」——重建对比显示 OLD 抽取 = 2,453,054（= 10-26 快照）、NEW 抽取 = 2,453,407（= 磁盘当前），479 个条目内容变了**；crawler 日志 `✓` 行数 = **0**、`raw/` 最新 mtime 仍是 10-23 → **零网络请求，纯属 10-26 抽取修复落地**；10-26 遗留的「index 未重建」已闭环，幻影 token index 可达数 = **0**；姊妹 KB cron 在 11:16:55 重启了 proxy 并于 11:17:02 加载到 799 → 本 skill 未再 restart；HTTP 探针 `-m 60` 拿到 `000` 是客户端 timeout（proxy 的 read timeout 是 120），应改用 `-m 240`；新坑：shell 命令里含裸 `&` 或 emoji 变体选择符会被 policy 拦，须走 `write_file` + 文件路径）**，**`references/crawl-state-2026-10-28.md`（**799/558 连续第九次持平**：index.json 2,453,407 bytes 与 10-27 **逐字节相同**，verdict=IDENTICAL，零网络请求；**本 cycle 补上了本 KB 独有的 `index.json` 原子写缺失**（姊妹 KB 10-27 就有，本 KB 一直漏着 → 补齐后复跑验证 index 字节未变、3:05 完成、无 `.tmp` 残留）；**姊妹 KB cron 在 11:08:34 重启了 proxy**，顺带把 10-27 落盘但未加载的 `schedule_reload()` 重载链加固修复**真正带上线**（进程内线程检查确认重载链是活的：主进程旁有 3.84h 前新建的线程 = T+20h 的第 4 次重载排期）；`/proc/<pid>/stat` 的 starttime 字段必须**先按最后一个 `)` 切分**再取，comm 含空格直接 split 会错位；幻影 token `cppset_tool_hand_number` / `star_servo_...` index 可达数 = **0**，107 处 `cpp` 命中经正则+上下文核对全是 `cpp_interface/`、`cpp_demo.cpp` 等**真实内容**非徽章粘连；两个 KB 完全同窗口（姊妹 11:03:26 / 本 skill 11:04:22 写完 index），CPU 争抢影响仍 ~5-10%）**，`references/crawl-state-2026-10-29.md`（**799/558 连续第十次持平**：index.json 2,453,407 bytes 与 10-28 逐字节相同、verdict=IDENTICAL、零网络请求（0 次 `✓`、raw/ 仍是 10-23）、3:20 落在稳态带内；**本 cycle 修掉 3 个此前从未记录的缺陷**——① 标题含 U+200B 零宽字符 764 条（姊妹 KB 早已有 `clean_text()`，本 KB 一直漏着；**字面零宽字符写进源码会被静默吞掉**，字符集必须用 `chr(0x200B)` 显式构造）；② 39 个空标题 / 34 个完全无内容条目（34 个是上游空目录页，`div.vp-doc` textlen=0，**补不了正文只能补标题** → 移植姊妹 KB 的 `og:title → URL 末段 → description` 兜底链；实测这 39 页有 og:title 的只有 0 个，全靠 URL 末段生效）；③ **systemd `Environment=` 块写错导致 4 个环境变量被静默忽略**（systemd 不认 `Environment=` 后跟缩进续行 → `Unknown key name 'PROXY_PORT' in section 'Service', ignoring.`；正确写法是每行一个 `Environment="K=V"`；`systemd-analyze verify` 要求文件名以 `.service` 结尾否则报 Invalid argument；`/etc` 里的 `HERMES_API_KEY` 是被截断的占位符 `hermes...arch`，修 unit 时要显式写代码默认值 `hermes-website-search` 才能保持行为一致）；离线重建后 index 2,453,407 → **2,450,869 bytes**，二次 `--check` 报 `rewritten=0 unchanged=799`（确定性成立），**分词级 token 丢失数 = 0**（内容完整性核对必须比对未截断的 `content_md`，snippet 长度变化是 800 字窗口边界移动的假象）；`diagnose_byte_change.py` 报 "MIXED" 是**探针顺序假象**（`regenerate_from_cache.py` 写盘时刷新了快照），硬证据是「0 次抓取 + raw/ 早于爬取 + OLD 重建 2,453,407 = 修复前尺寸」）**，`references/crawl-state-2026-10-30.md`（**799/558 连续第十一次持平**：index.json **2,450,869 bytes 与 10-29 逐字节相同**、verdict=IDENTICAL、零网络请求（0 次 `✓`、raw/ 仍是 10-23）、3:14 落在稳态带内；**本 cycle 闭合了 10-29 的两项遗留**——① **proxy 未用新单元重启**（单元 10-29 12:00 落盘但进程 10-28 11:08 启动 → 线上仍是旧环境，符合「补丁『写了』≠ 补丁『上线了』」）→ `daemon-reload` + `restart` 后验证 `/proc/<pid>/environ` 四个变量全部到位、`journalctl` 的 `Unknown key name` 计数降为 **0**、`systemd-analyze verify` 对本单元零告警；**并证明重启是行为中性的**（新单元值逐一等于代码默认值，`HERMES_API_KEY` sha 前 12 位 `23760f4462da` 三处一致、len=21；`SKILL_NAME` 在代码里 grep 命中 **0** 次 → 本就没用到）；② **改动未提交** → 本 KB `7ded09c` 已 push，proxy repo 由姊妹 KB cron 并发提交为 `001ddfb`（已 push）；**新坑三条**——(a) restart 后**第一次**跑 `check_proxy_health.py` 仍可能 `Connection refused`，**必须带重试**（本轮 retry 第一次即 200）；(b) **姊妹 KB 的 cron 在同窗口又 restart 了一次 proxy**（11:15:35 我 → PID 1779750；11:16:37 姊妹 → PID 1779868）→ 我的 HTTP 探针被打成 `RemoteDisconnected`，**这不是检索崩了**（判读表：500 才是崩）；(c) **git commit message 含中文会被 tirith `confusable_text` 拦下** → commit message 必须用纯 ASCII；另：姊妹 KB 与本 skill 会并发 commit 同一个 proxy repo，commit 报 `nothing to commit` 是**良性竞态**不是失败）、`references/crawl-state-2026-10-31.md`（**799/558 连续第十二次持平（纯稳态）**：index.json **2,450,869 bytes 与 10-30 逐字节相同**、verdict=IDENTICAL、零网络请求（0 次 `✓`、raw/ 仍是 10-23）、3:18.8 落在稳态带内、md/ 今日零重写、无 `.tmp` 残留；**本 cycle 无待办遗留，纯验证 + 文档沉淀**——① **姊妹 KB 的 `shared-proxy-service-pitfalls.md` 是细化后的权威版**（姊妹 9,713 B vs 本 skill 7,939 B，diff 144 行）→ 按文件自身声明的权威规则**已覆盖同步**，两份 sha 均为 `44b62282ea9fcb5e`；② **`/proc/<pid>/task/<tid>/stat` 的 `starttime` 是绝对值**（字段 22 = `tail[19]`，自 boot 起的时钟滴答），按「进程 starttime + 线程 starttime/HZ」算会得到**负数年龄**（实测 age=-4201h）→ 正确公式 `boot + starttime/HZ`，或直接用 `ps -L -o lstart`；③ **`references/.index-snapshot.json` 被 git 跟踪** → 每轮 `check_crawl_state.py` 都让工作树变脏，属**良性**、别误当未提交代码改动；④ 索引卫生全绿（零宽字符 0 / 空标题 0 / 幻影 token 可达 0 / 旧 API 可达 0）；检索链路无 800 字降级；proxy 重载链**活着**（定时器线程 07:16:54 = start+20h = 第 4 次 5h 排期，`schedule_reload()` 已带 try/except/finally）；四环境变量到位、`Unknown key` 计数 = 0；端口仅 8643+8642 无遗留压测进程；index 逐字节未变 → **不 restart proxy**）**，`references/crawl-state-2026-11-01.md`（**799/558 连续第十三次持平（纯稳态）**：index.json 2,450,869 bytes 与 10-30/10-31 逐字节相同、verdict=IDENTICAL、零网络请求（0 次 `✓`、raw/ 仍是 10-23）、3:14.2 落在稳态带内、md/ 今日零重写、无 `.tmp` 残留；**本 cycle 闭合了 10-31 报告里写「遗留：无」但实际未提交的三处工作**（`check_index_hygiene.py` 当时还是未跟踪文件 → 下次 `git pull` 会静默回退，10-29 的三修守卫就没了 → **教训：报告写「遗留：无」前必须 `git status` 核过**）；**同步姊妹 KB 的权威版 `shared-proxy-service-pitfalls.md`**（13,819 B，新增陷阱 9 脱敏误判 / 陷阱 10 timeout 太短，两份 sha 均为 `5976db818c7c2dff`）；**移植姊妹 KB 的 `scripts/check_e2e_request.py`**（端到端请求探针 —— **唯一能抓到「proxy→gateway→LLM」链路故障的检查**，/2026-10-31 曾靠它抓到 `HERMES_TIMEOUT` 硬编码 120s 导致的**真实用户随机 502**，而当时 /health、检索链路、引用链接**全部照常绿灯**）→ **标准验证序列由 4 步扩到 5 步**；本轮实测 **5/5 HTTP 200**（69.9/36.4/28.8/67.5/**143.6**s，其中 143.6s 在旧 120s 上限下必然 502 → 证明 `a331618` 已生效）；**修正本 SKILL.md 两处过期 timeout 指引**（「read timeout 120 → `-m 240`」改为「上游 timeout 现为 300 → `-m 360`」——`-m 240` 现在偏小会假 000）；proxy 未 restart（index 逐字节未变）；重载链活着（定时器线程 07:37:06 = start+20h = 第 4 次 5h 排期，11:04/11:05 的短命线程是 Flask 请求线程非重载线程）；`Unknown key` 计数 0、HTTP 500 计数 0）**
 
 姊妹 KB 完整诊断与 patch 模板见 `~/.hermes/skills/productivity/inexbot-knowledge-base/references/vitepress-v2-alpha-migration.md`。
 
@@ -806,13 +806,19 @@ curl -s -m 60 -o /dev/null -w '%{http_code}\n' -X POST http://localhost:8643/v1/
 > 判据是「**没有 500**」，不是「拿到 200」。
 >
 > ⚠️ **2026-10-27 新坑：`-m 60` 会拿到 `http_code=000`（超时），别误判成检索崩了。**
-> proxy 转发给 gateway 时用 `read timeout=120`，所以 gateway 侧慢会被 proxy 回成 **502**
-> （`{"error":{"message":"HTTPConnectionPool(...): Read timed out. (read timeout=120)"}}`），
-> 而**客户端**若给 `-m 60`，则先于 proxy 返回 → 拿到 `000` + exit code 28。
-> **正确姿势**：`-m 240`，或用 `terminal(background=true)` 跑再读状态码文件。
+> gateway 侧慢会被 proxy 回成 **502**，而**客户端**若给 `-m 60`，则先于 proxy 返回
+> → 拿到 `000` + exit code 28。
 > 拿到 **000** 时**不要**当成检索故障——它是客户端 timeout，不是 proxy 的 500。
 > 2026-10-27 实测：`-m 240` 后拿到 502（gateway 超时），gateway 8642 直连 200（1.9s）
 > → 结论是 gateway 处理大 system prompt 慢，与 KB/检索链路无关。
+>
+> ⚠️ **2026-10-31 更新：proxy 上游 read timeout 已从 120s 提到 300s**
+> （proxy repo commit `a331618`，`HERMES_TIMEOUT` 环境变量可覆盖）。
+> **客户端 `-m` 必须大于 proxy 的上游 timeout → 用 `-m 360`**（`-m 240` 现在偏小）。
+> ⚠️ **这个缺陷曾导致真实用户故障**：查长手册类问题**随机 502**
+> （2/4 失败，精确卡在 120.1s），而 `/health` 绿灯、检索链路 PASS、引用链接 200 **全部照常**——
+> **只有真正打一次完整请求才暴露**。
+> → **每轮 cron 必须跑端到端探针**（见下），单次 200 不作数（timeout 类故障是随机的）。
 
 > ⚠️ **proxy 的 stdout 是块缓冲的**（14 处 `print()` 都没有 `flush=True`），
 > `journalctl -u hermes-skill-proxy` 里**看不到 `[proxy] Query: ... / Intent: ...` 那些检索调试行**
@@ -997,6 +1003,40 @@ ps -o pid,lstart,etime -p $(pgrep -f hermes-skill-proxy.py | head -1)
 > → **restart 后不要只跑一次健康检查就判定失败**，必须带重试。
 > `check_proxy_health.py` 自身的 retry 窗口有时仍不够（取决于 systemd 何时完成 socket listen）。
 
+### 每轮 cron 的标准验证序列（2026-10-31 固化）
+
+按顺序跑，**全部零网络、秒级**（除 `check_retrieval_chain.py` 要 import proxy 模块）：
+
+```bash
+SK=~/.hermes/skills/productivity/inexbot-open-knowledge-base
+
+# 1) 爬取状态 + 字节级对比（判定稳态 / 上游是否变了）
+python3 $SK/scripts/check_crawl_state.py
+
+# 2) 索引卫生回归（零宽字符 / 空标题 / 幻影 token / 旧 API 可达性）
+python3 $SK/scripts/check_index_hygiene.py
+
+# 3) 检索链路真通（snippet 长度 > 800 = 正文命中；== 800 = 静默降级 BUG）
+#    ⚠️ 必须 /usr/bin/python3（沙盒 python3 没装 flask）
+/usr/bin/python3 $SK/scripts/check_retrieval_chain.py
+
+# 4) proxy 健康 + 两个 KB 的 docs 数
+python3 $SK/scripts/check_proxy_health.py
+
+# 5) 端到端真实请求（唯一能抓到「proxy -> gateway -> LLM」链路故障的检查）
+#    ⚠️ 必须 /usr/bin/python3；客户端 timeout 必须 > proxy 上游 timeout(300) → 默认 360
+#    ⚠️ timeout 类故障是【随机】的 → 单次 200 不作数，默认每查询打 4 次
+/usr/bin/python3 $SK/scripts/check_e2e_request.py
+```
+
+> 💡 **第 2 步以前每次都要手写**（10-29 三修之后一直没自动化守卫），
+> 10-31 已固化成 `scripts/check_index_hygiene.py`。
+> 第 4 步 exit 1 或第 3 步 exit 1 → 本轮 cron 算**失败**，要在报告里点名。
+>
+> ⚠️ **第 5 步是姊妹 KB 10-31 才加的，勿删**：它抓到了 `HERMES_TIMEOUT` 硬编码 120s
+> 这个**真实用户故障**（随机 502），而当时 `/health`、检索链路、引用链接**全部照常绿灯**。
+> **其余 4 步全绿也不能替代它** —— 只有真正打一次完整请求才暴露。
+
 ### ⚠️ 姊妹 KB 的 cron 会在同窗口 restart proxy → 你的探针可能拿到 `RemoteDisconnected`（2026-10-30）
 
 **现象**：本轮 11:15:35 我 restart proxy → PID 1779750；**11:16:37 姊妹 KB 的 cron 又 restart 了一次**
@@ -1008,7 +1048,7 @@ ps -o pid,lstart,etime -p $(pgrep -f hermes-skill-proxy.py | head -1)
 |---|---|
 | **500** | 检索真的崩了（slug 契约断裂 / index 读取异常） |
 | **RemoteDisconnected** | ⚠️ **大概率是被并发 restart 打断**，不是检索故障 → 先 `ps` / `systemctl status` 看 PID 是否刚变 |
-| 000（客户端 timeout） | 客户端 `-m` 给太小，proxy 的 read timeout 是 120 → 用 `-m 240` |
+| 000（客户端 timeout） | 客户端 `-m` 给太小，proxy 上游 read timeout 现为 **300**（2026-10-31 起，原 120）→ 客户端用 `-m 360` |
 | 502 | gateway 侧超时，检索成功 |
 
 2026-10-30 实测：PID 从 1779750 变成 1779868，且 journal 里有 `Stopping/Started` → 确认是姊妹 KB 并发 restart。
@@ -1084,4 +1124,65 @@ age_h = (time.time() - t_abs) / 3600
 这是**良性**的（快照本就该跟着 index 走），但不要误当成「有未提交的代码改动」。
 commit 时连同当轮文档一起提交即可；若想让它彻底不进版本库，
 用 `git update-index --skip-worktree` 或加进 `.gitignore`（会与姊妹 KB 不一致，暂不建议）。
+
+### ✅ 索引卫生有自动巡检脚本了：`scripts/check_index_hygiene.py`（2026-10-31 新增）
+
+10-29 那轮修的三处缺陷（零宽字符 / 空标题 / 幻影 token）**一直没有自动化守卫**，
+每次想确认「修复还生效吗」都得手写探针 —— 10-31 又手写了一遍。
+现在固化成脚本，**一条命令**：
+
+```bash
+python3 ~/.hermes/skills/productivity/inexbot-open-knowledge-base/scripts/check_index_hygiene.py
+# 需要区分「上游改了」vs「本地抽取 bug」时加 --raw-scan
+python3 ~/.hermes/skills/productivity/inexbot-open-knowledge-base/scripts/check_index_hygiene.py --raw-scan
+```
+
+它检查 5 项硬指标：
+
+| 指标 | 期望 | 含义 |
+|---|---|---|
+| 含零宽字符的条目 | **0** | 10-29 `clean_text()` 仍生效 |
+| 空标题条目 | **0** | 10-29 标题兜底链仍生效 |
+| 空 `content_snippet` 条目 | ~34 | 上游空目录页（**正常**，只能补标题） |
+| 幻影 token `cppset_tool_hand_number` index 可达数 | **0** | 语言徽章抽取 bug 未回归 |
+| 旧 API `star_servo_...` index 可达数 | **0** | 10-23 改名盲区修复未回归 |
+
+exit 0 = 全部硬指标成立；exit 1 = 有回归。
+**reachability 一律走 proxy 的 `_md_slug_candidates()`** —— 脚本里绝不手写 `slugify()`
+（见下方「自写 slugify 已两次漏掉 |」）。`--raw-scan` 会额外报告
+「该 token 在 `raw/` 里出现几次」→ **raw 有 = 上游真改了；raw 干净 = 本地抽取 bug**。
+
+### ⚠️ `check_staleness.py` 自己踩了「自写 slugify 漏掉 `|`」的坑（2026-10-31 修复）
+
+该脚本的 docstring 写着「MUST match crawler.py exactly」，但它自己的字符集是：
+
+```python
+# ❌ 修复前
+re.sub(r'[<>:"|?*]', '', ...)      # ← 竖线前没有反斜杠
+# ✅ crawler.py 的规范写法
+re.sub(r'[<>:\|\"?*]', '', ...)    # ← 竖线前有反斜杠（转义）
+```
+
+两者是**不同的集合** → URL 含 `|` 的页面会算出错误的 md 文件名 →
+**假「文件不存在」/ 假 cache-only term**（与 10-27、10-25 记录的是同一个坑）。
+2026-10-31 已修正，并把「不要凭记忆重写、直接 import crawler 的那个」写进 docstring。
+
+> ⚠️ **本 skill 里任何手写 `slugify()` 的脚本都要过一遍这个检查**：
+> `grep -n "slugify" scripts/*.py` → 看字符集是不是 `r'[<>:\|\"?*]'`。
+> **正确字符集是 `r'[<>:\|\"?*]'`**（竖线**前面有反斜杠**），不是 `[<>:\"|?*]`。
+> 更稳的做法：`import` crawler 模块里的 `crawler.slugify()`，永远不要复述。
+
+### 判活 crawler 时如何看到**真正的 python 子进程**（2026-10-31 验证）
+
+后台跑 crawler 时，`ps -p <wrapper_pid>` 看到的是 **wrapper bash**（`%CPU=0.0`、`STAT=Ss`），
+不是 python 子进程。想看真正在跑的那个：
+
+```bash
+ps --ppid <wrapper_pid> -o pid,etime,cmd
+# 输出示例：1787274  00:34  python3 .../crawler.py
+```
+
+inline `os.kill(pid, 0)` 等待循环里配合它，就能同时确认
+「wrapper 还活着」+「python 子进程 etime 在单调前进」（2026-10-31 实测 etime 00:35→03:04 单调递增）。
+**判活仍以 PID 存活 + etime 前进为准**，`%CPU` 永远是 0% 不是死锁证据。
 

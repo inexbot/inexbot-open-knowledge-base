@@ -1,0 +1,88 @@
+# 2026-11-01 爬取状态：799/558 连续第十三次持平（纯稳态，零网络请求）
+
+## 爬取本体：完全稳态，无任何异常
+
+| 项目 | 结果 |
+|---|---|
+| 爬取页数 | **799 / 799**（0 失败） |
+| 耗时 | **3:14.2**（稳态带 3:00–3:20 内） |
+| index.json | **2,450,869 bytes** —— 与 10-30 / 10-31 **逐字节相同** |
+| verdict | `IDENTICAL`（`check_crawl_state.py`） |
+| 网络请求 | **0**（日志 `✓` 行 = 0；`raw/` 最新 mtime = 2026-10-23） |
+| locale 拆分 | zh=443 / en=178 / kr=178 |
+| md/ 今日重写 | **0 个**（`find -newermt` 无命中） |
+| `.tmp` 残留 | 无（原子写正常） |
+| 姊妹 KB | 558（同窗口并发，本 KB 仍 3:14 → CPU 争抢影响 ~5-10%，与既往判断一致） |
+
+上游**零变化**，连续第 13 次持平（自 2026-10-10 起 22 天零新增）。
+
+## 验证序列（10-31 固化的 4 步 + 本轮新增第 5 步）全绿
+
+| # | 检查 | 结果 |
+|---|---|---|
+| 1 | `check_crawl_state.py` | IDENTICAL，2,450,869 bytes ✅ |
+| 2 | `check_index_hygiene.py` | 零宽字符 0 / 空标题 0 / 幻影 token 可达 0 / 旧 API 可达 0 ✅ |
+| 3 | `check_retrieval_chain.py` | 静默降级(==800) **0**；短正文 4 条（伺服报警占位页，正常）✅ |
+| 4 | `check_proxy_health.py` | inexbot-open=799 / inexbot=558 / loaded=True ✅ |
+| 5 | `check_e2e_request.py`（**本轮新增**） | **5/5 HTTP 200**（69.9 / 36.4 / 28.8 / 67.5 / **143.6**s）✅ |
+
+## 本轮：纯稳态 cycle，但**闭合了 10-31 的三处遗留**
+
+10-31 那轮虽然报告说「遗留：无」，但**实际有 3 处未提交的工作**留在工作树里
+（`git status` 可见 `M SKILL.md` / `M references/crawl-state-2026-10-31.md` /
+`M scripts/check_staleness.py` + 未跟踪的 `scripts/check_index_hygiene.py`）。
+
+> ⚠️ **这是个真实风险**：未提交 = 下次 `git pull` 会**静默回退**，
+> 10-29 的三修守卫（`check_index_hygiene.py`）就消失了。
+> → **教训：报告写「遗留：无」之前必须 `git status` 核过一遍。**
+
+本轮已全部提交。
+
+### ① 同步姊妹 KB 的权威版 `shared-proxy-service-pitfalls.md`（13,819 B）
+
+姊妹 KB 10-31 又扩写了这份共享文件（新增 **陷阱 9** 脱敏误判、**陷阱 10** 120s timeout 太短），
+两份再次漂移（姊妹 13,819 B vs 本 skill 9,713 B，diff 98 行）。
+按文件自身声明的权威规则（「本文件是跨 KB 的唯一权威来源」）**已覆盖同步**，
+两份 sha 均为 `5976db818c7c2dff`，逐字节一致。
+
+### ② 移植姊妹 KB 的 `scripts/check_e2e_request.py`（端到端请求探针）
+
+这是姊妹 KB 10-31 新写的脚本，**抓到了真实用户故障**：
+proxy 转发到 gateway 的 read timeout 硬编码 120s，而 KB 注入后 system prompt 达
+12k–20k 字符、gateway 实测需 **30–140s** → 查长手册类问题**随机 502**
+（实测 2/4 失败，精确卡在 120.1s）。
+
+**关键教训**：`/health` 绿灯、检索链路 PASS、引用链接 200 —— **全部与该缺陷无关**，
+**只有真正打一次完整请求才暴露**。
+
+本轮已移植到本 KB（sha `34b0974c1103394b`），并**实测通过**：
+5/5 HTTP 200，其中一次耗时 **143.6s** —— 旧的 120s 上限下这次**必然 502**，
+证明姊妹 KB 的 `a331618`（`HERMES_TIMEOUT` 默认 300s）**已在线上生效**。
+
+> 💡 **本 skill 的标准验证序列由此从 4 步扩到 5 步**，第 5 步写进了 SKILL.md。
+
+### ③ 修正本 SKILL.md 里**已过期**的 timeout 指引
+
+姊妹 KB 改了 proxy 的上游 timeout 后，本 skill 的 SKILL.md 里还有两处写「read timeout 是 120 → 用 `-m 240`」：
+- 第 ~809 行的探针说明
+- 第 ~1042 行的判读表
+
+→ 已改为「上游 timeout 现为 **300**（2026-10-31 起，原 120）→ 客户端用 `-m 360`」。
+
+> ⚠️ **`-m 240` 现在偏小**（proxy 最多等 300s，客户端 240s 会先超时 → 假 000）。
+> 判读表里的 `-m` 值必须跟着 proxy 的 `HERMES_TIMEOUT` 一起改。
+
+## proxy 状态
+
+- 进程 PID **1792095**，启动于 **2026-10-31 11:36:48**（姊妹 KB 10-31 部署 `a331618` 时重启的）
+- **本轮未 restart**：index.json 逐字节未变 → 没有新数据要加载，restart 是无谓的
+- 重载链**活着**：定时器线程 `1798361` 创建于 **2026-11-01 07:37:06**
+  = 进程启动 +20h = **第 4 次 5h 排期**，符合 `schedule_reload()` 的 `try/except/finally` 链
+- 11:04:52 / 11:05:38 出现的短命线程是 **Flask 请求线程**（`app.run(threaded=True)`），非重载线程
+- 四环境变量到位（`PROXY_PORT` / `HERMES_URL` / `HERMES_API_KEY` len=21 / `SKILL_NAME`）
+- `journalctl` 的 `Unknown key name` 计数 = **0**；HTTP 500 计数 = **0**
+- 端口仅 **8643**（proxy）+ **8642**（gateway），无遗留压测进程
+
+## 遗留
+
+**无**。工作树已全部提交并 push。

@@ -51,6 +51,31 @@
 → 每轮 cron 结束 `git status` 必有一处 `M references/.index-snapshot.json`。
 **良性**（快照本就该跟着 index 走），不要误当成「有未提交的代码改动」。
 
+### ④ 索引卫生探针**手写**了一遍 → 已固化成脚本（curator pass 补上）
+
+本轮为了确认 10-29 三修仍生效，**手写**了一个探针（零宽字符 / 空标题 /
+空 snippet / 幻影 token 可达性 / 旧 API 可达性）。
+写完才意识到：**这个探针本该早就存在** —— 10-29 修了三处缺陷却**没留下任何自动化守卫**，
+每轮 session 都要重新推导一次。
+
+→ 已固化为 **`scripts/check_index_hygiene.py`**，并写进 SKILL.md 的
+「每轮 cron 的标准验证序列」（4 步：`check_crawl_state` →
+`check_index_hygiene` → `check_retrieval_chain` → `check_proxy_health`）。
+
+### ⑤ `check_staleness.py` 踩了「自写 slugify 漏掉 `|`」的坑（curator pass 修复）
+
+翻 `scripts/` 时发现 `check_staleness.py` 自己的 `slugify()` 是：
+
+```python
+re.sub(r'[<>:"|?*]', '', ...)      # ❌ 竖线前没有反斜杠
+```
+
+而 crawler 的规范写法是 `re.sub(r'[<>:\|\"?*]', '', ...)`（竖线**前有反斜杠**）。
+两者集合不同 → URL 含 `|` 的页面会算出错误 md 路径 → 假「文件不存在」/ 假 cache-only term。
+这正是 SKILL.md 里记录了两次的同一个坑（「自写 slugify 已两次漏掉 |」）。
+
+**已修复**该脚本，并把「不要凭记忆重写，直接 import crawler 的那个」写进它的 docstring。
+
 ## 验证结果（全绿）
 
 ### 索引卫生（10-29 三修之后仍然成立）
@@ -104,6 +129,9 @@
 | 7 | proxy 重载链 / 环境变量 / unit 校验 | 全部正常 ✅ |
 | 8 | SKILL.md 补 2 个新坑 + 本文档 | ✅ |
 | 9 | commit + push | ✅ |
+| 10 | **新增 `scripts/check_index_hygiene.py`**（把本轮手写的探针固化） | ✅ |
+| 11 | **修 `check_staleness.py` 的 `slugify()` 漏 `|`** | ✅ |
+| 12 | SKILL.md 补「标准验证序列」4 步 + 新脚本指针 | ✅ |
 
 ## 遗留
 

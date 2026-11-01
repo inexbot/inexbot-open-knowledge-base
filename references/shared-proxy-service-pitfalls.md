@@ -79,7 +79,7 @@ proxy 的 `proxy_request()` 里 **`search_all_kb()` 在转发到 gateway 之前�
 |---|---|---|
 | **500** | 🔴 **检索真的崩了**（slug 契约断裂 / index 读取异常） | 查 `_md_slug_candidates()` 与 crawler `slugify()` 契约 |
 | **RemoteDisconnected** | ⚠️ **大概率被并发 restart 打断** | 查 PID + journal（陷阱 1） |
-| **000**（客户端 timeout） | 客户端 `-m` 给太小 | proxy read timeout 是 **120** → 用 `-m 240` |
+| **000**（客户端 timeout） | 客户端 `-m` 给太小 | proxy 上游 read timeout 现为 **300**（2026-10-31 起，原 120）→ 客户端用 `-m 360` |
 | **502** | gateway 侧超时 | 检索成功，与 KB 无关 |
 | **200** | 检索成功 + gateway 返回了 | ✅ 但**别把 200 当唯一判据** —— 见下 |
 
@@ -193,13 +193,92 @@ systemd 下 Python 的 stdout 是块缓冲，小段输出会攒在用户态缓�
 
 ---
 
-## 附：两个 KB 的基线速查（2026-10-30）
+## 陷阱 9：`hermes...arch` 这类带省略号的 key 是**输出脱敏**，不是文件里的截断占位符
+
+**症状**（2026-10-31 实测）：读 `/etc/systemd/system/hermes-skill-proxy.service` 或
+`/proc/<pid>/environ`，看到 `HERMES_API_KEY=hermes...arch` / `hermes...rch` ——
+长度对不上（`hermes...arch` 是 13 字符，真值 `hermes-website-search` 是 21 字符）。
+
+**真相**：这是**本工具链（Hermes terminal 输出层）的 secret redaction**，
+它把疑似密钥的字符串**替换成中间省略形式**。**磁盘上的文件是完整的。**
+
+**⚠️ 危害**：如果照字面理解，就会「修复」一个**根本没坏的** key ——
+把 unit 里的值改成别的东西，反而**引入真的故障**。
+
+**确认方法（永远用这套，不要靠肉眼看输出）**：
+
+```python
+import hashlib, subprocess
+unit = subprocess.check_output(["sudo","-n","cat","/etc/systemd/system/hermes-skill-proxy.service"]).decode()
+key = [l.split("=",1)[1].strip('"') for l in unit.splitlines() if "HERMES_API_KEY" in l][0]
+print(len(key), [ord(c) for c in key])       # ← char codes 是权威的，不受脱敏影响
+print(hashlib.sha256(key.encode()).hexdigest()[:12])
+print("hermes-website-search" in key)        # ← 布尔判断也不受影响
+```
+
+2026-10-31 实测：`char codes` = `[72,69,82,77,69,83,95,65,80,73,95,75,69,89,61,104,101,114,109,101,115,45,119,101,98,115,105,116,101,45,115,101,97,114,99,104]`
+→ 值是完整的 `hermes-website-search`，sha 前 12 位 `23760f4462da`，
+与**代码默认值**、**gateway `config.yaml` 的 `api_server.api_key`** **三处一致**；
+渲染后的 repo 模板与 `/etc` 部署版**逐字节相同**。
+
+> 💡 **通则**：终端输出里出现 `xxx...yyy` 形式的疑似密钥时，
+> **一律先跑 sha 摘要 / char codes / `in` 布尔判断**再下结论。
+> 脱敏只影响**显示**，不影响**文件内容**。
+
+---
+
+## 陷阱 10：proxy 上游 read timeout **120s 太短** → 查手册类问题随机 502（2026-10-31 修复）
+
+**症状**：用户问「查冲压工艺手册参数」这类**会命中长手册**的问题时，
+**随机**返回 HTTP 502，body 是：
+
+```json
+{"error": {"message": "HTTPConnectionPool(host='localhost', port=8642): Read timed out. (read timeout=120)"}}
+```
+
+**⚠️ 这不是检索崩了**（那是 500）—— **检索成功了，是网关返回得比 proxy 的等待时间慢**。
+
+**根因**（2026-10-31 实测）：proxy 转发到 gateway 时硬编码 `timeout=120`，
+但 KB 检索后注入的 system prompt 约 **12k–20k 字符**，gateway 实测需要
+**30–140s** 才返回（长手册类查询更慢）。
+
+**实测证据**（同一问题连打 4 次）：**2/4 失败**（2 次精确卡在 120.1s），
+成功的 2 次是 44s / 30s —— **是随机超时，不是必然失败**，所以极易被误判成「偶发网络问题」。
+
+**修复**（proxy repo commit `a331618`，已 push + 已部署）：
+
+```python
+# 可配置，默认 300s
+HERMES_TIMEOUT = int(os.getenv("HERMES_TIMEOUT", "300"))
+...
+resp = requests.post(..., timeout=HERMES_TIMEOUT, stream=True)
+```
+
+**修复后实测**：同一问题 **4/4 成功**（30.0s / 27.9s / 83.7s / 91.2s）；
+三类查询（长手册 / 示教器手册 / 控制器典型查询）**全部 HTTP 200**。
+
+> 💡 **判读要点**：看到 502 + `read timeout=120`，**先量网关真实耗时**再决定要不要查检索：
+> ```bash
+> # 直接打 gateway（绕过 proxy），用真实注入量级的 system prompt
+> # 实测：小 prompt 1.4s；12k 字符 KB prompt 64s；35k 字符 135–161s
+> ```
+> 只要 **真实耗时 > proxy 的 timeout**，就必然 502 —— 与检索无关。
+
+> ⚠️ **客户端 `-m` 要比 proxy 的 timeout 更大**，否则拿到的是客户端 000 而不是 502。
+> timeout 已是 300 → 客户端用 **`-m 360`**。
+
+---
+
+## 附：两个 KB 的基线速查（2026-10-31）
 
 | KB | 站点 | docs | index.json 字节 | locale 拆分 |
 |---|---|---|---|---|
-| `inexbot` | doc.inexbot.com | **558** | 1.72 MB | 仅 zh |
+| `inexbot` | doc.inexbot.com | **558** | **1,722,769** | 仅 zh |
 | `inexbot-open` | open.inexbot.com | **799** | **2,450,869** | zh=443 / en=178 / kr=178 |
 
 > ⚠️ `inexbot-open` 的 index 基线在 2026-10-29 从 **2,453,407 → 2,450,869**。
 > 那是**三修落地后的新基线**（U+200B 清除 + 标题兜底链），**不是**新的字节跳变。
 > 判「上游有没有变」要用 `check_crawl_state.py` 的 verdict，不要拿旧字节数硬比。
+>
+> ⚠️ `inexbot` 的 index 基线 **1,722,769 bytes**（sha 前 16 位 `d565c39c433370c3`）
+> 自 2026-10-30 起逐字节持平 —— **558 篇已连续多日零新增**。
