@@ -1053,6 +1053,46 @@ python3 $SK/scripts/check_proxy_health.py
 
 2026-10-30 实测：PID 从 1779750 变成 1779868，且 journal 里有 `Stopping/Started` → 确认是姊妹 KB 并发 restart。
 
+### ⚠️ journal 的 500/502 计数**必须按当前进程启动时间切片**（2026-11-01 实测）
+
+```bash
+PID=$(pgrep -f hermes-skill-proxy.py | head -1)
+TS=$(date -d "$(ps -o lstart= -p $PID)" "+%Y-%m-%d %H:%M:%S")
+sudo -n journalctl -u hermes-skill-proxy.service --since "$TS" --no-pager | grep -c '" 500 -'
+```
+
+`journalctl -u <unit>` 统计的是**该 unit 的全部历史**，跨越几十次进程重启
+（每次部署一个新 PID）→ 历史故障被算到今天头上。
+
+> ⚠️ **`ps -o lstart=` 的输出不能直接喂给 `--since`**（含空格 + 会被当成多个参数），
+> 必须先 `date -d ... "+%Y-%m-%d %H:%M:%S"` 转成单参数时间戳，否则 journalctl 直接报错退出。
+
+2026-11-01 实测：按当前进程切片 → `Unknown key`=0 / HTTP 500=**0** / HTTP 502=**0**；
+**全量历史** HTTP 500 = **606**、502 = **24**（都是几十次重启前的老账）。
+→ **两个都要看**：全量历史判断有没有老问题，进程切片判断当前状态。
+
+> 📌 完整版见 `references/shared-proxy-service-pitfalls.md` §陷阱 11–12（姊妹 KB 权威版）。
+
+### ⚠️ 自己拼 md 文件名 → 漏掉 `.md` 后缀 → **假阳性**（2026-11-01 实测）
+
+proxy 的 `_md_slug_candidates(path)` 返回的是**不带 `.md` 后缀的 slug**，调用方要自己拼后缀：
+
+```python
+for slug in mod._md_slug_candidates(k):
+    if (MD / (slug + ".md")).exists():   # ← 必须自己拼 ".md"
+        ok = True
+        break
+```
+
+漏掉后缀 → 报「0/N 全部 unresolved」，看着像 **slug 契约断裂**——
+**但线上完全正常**。**判据**：若「检索链路实测」正常（`snippet_len=4000`、正文命中）
+却报 slug 契约断裂，**几乎一定是自己的检查脚本写错了**。
+契约真断裂的表现是**检索侧** 800 字静默降级或 HTTP 500，不是这个。
+
+> ⚠️ 另：`_md_slug_candidates()` 可能返回**超长**文件名候选 →
+> `Path.exists()` 会抛 `OSError [Errno 36]` → 必须 `except OSError: continue` 兜住，
+> 否则**检查脚本自己**先崩掉。
+
 > 📌 **完整版（含并发 commit 竞态、policy 拦截总清单、基线速查）见
 > `references/shared-proxy-service-pitfalls.md`** —— 那是两个 KB 共享的权威来源，
 > 姊妹 skill `inexbot-knowledge-base` 里有同一份。

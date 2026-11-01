@@ -269,7 +269,75 @@ resp = requests.post(..., timeout=HERMES_TIMEOUT, stream=True)
 
 ---
 
-## 附：两个 KB 的基线速查（2026-10-31）
+## 陷阱 11：自己拼 md 文件名 → 漏掉 `.md` 后缀 → **0/558 假阳性**（2026-11-01 实测）
+
+**症状**：自写 slug 契约检查脚本报
+
+```
+resolved: 0 / 558
+UNRESOLVED (558): /zh/ ... /zh/%E4%BA%A7%E5%93%81...
+```
+
+看起来像「proxy 与 crawler 的 slug 契约断裂了」—— **但线上其实完全正常**。
+
+**根因**：proxy 的 `_md_slug_candidates(path)` 返回的是**不带 `.md` 后缀的 slug**，
+调用方要自己拼后缀。proxy 内部是这么用的：
+
+```python
+for slug in _md_slug_candidates(path):
+    cand = md_dir / f"{slug}.md"      # ← 后缀在这里
+```
+
+**✅ 正确写法**：
+
+```python
+for slug in mod._md_slug_candidates(k):
+    if (MD / (slug + ".md")).exists():   # ← 必须自己拼 ".md"
+        ok = True
+        break
+```
+
+> 💡 **判据**：如果「检索链路实测」正常（`snippet_len=4000`、正文命中），
+> 但「slug 契约」报 0/558 —— **几乎一定是自己的检查脚本写错了，不是契约断裂**。
+> 契约真断裂的表现是**检索侧**出现 800 字静默降级或 HTTP 500，不是这个。
+
+> ⚠️ 另：`_md_slug_candidates()` 可能返回**超长**文件名候选 →
+> `Path.exists()` 会抛 `OSError [Errno 36]` → 必须 `except OSError: continue` 兜住，
+> 否则**检查脚本自己**先崩掉。
+
+---
+
+## 陷阱 12：journal 的 500/502 计数**必须按进程启动时间切片**（2026-11-01 实测）
+
+**症状**：跑
+
+```bash
+sudo -n journalctl -u hermes-skill-proxy.service --no-pager | grep -c '" 500 -'
+```
+
+得到 **606**，而当前进程明明健康 —— 差点误判成「今天在疯狂 500」。
+
+**根因**：`journalctl -u <unit>` 统计的是**该 unit 的全部历史**，
+跨越几十次进程重启（每次部署一个新 PID）。历史故障被算到了今天头上。
+
+**✅ 正确做法**：用**当前 proxy 进程的启动时间**切片：
+
+```bash
+PID=$(pgrep -f hermes-skill-proxy.py | head -1)
+START=$(ps -o lstart= -p "$PID")     # 例如 "Sat Oct 31 11:36:48 2026"
+sudo -n journalctl -u hermes-skill-proxy.service --since "$START" --no-pager \
+  | grep -c '" 500 -'
+```
+
+2026-11-01 实测（PID 1792095，启动于 2026-10-31 11:36:48）：
+`Unknown key name` = **0**、HTTP 500 = **0**、HTTP 502 = **0**、重载记录 = 2。
+
+> ⚠️ 反过来也要小心：**只看「当前进程」会漏掉「进程刚重启」掩盖掉的问题**。
+> 正确姿势是**两个都看**：全量历史（判断有没有老问题）+ 按进程切片（判断当前状态）。
+
+---
+
+## 附：两个 KB 的基线速查（2026-11-01）
 
 | KB | 站点 | docs | index.json 字节 | locale 拆分 |
 |---|---|---|---|---|

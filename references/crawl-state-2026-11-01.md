@@ -38,12 +38,17 @@
 
 本轮已全部提交。
 
-### ① 同步姊妹 KB 的权威版 `shared-proxy-service-pitfalls.md`（13,819 B）
+### ① 同步姊妹 KB 的权威版 `shared-proxy-service-pitfalls.md`（16,354 B）
 
-姊妹 KB 10-31 又扩写了这份共享文件（新增 **陷阱 9** 脱敏误判、**陷阱 10** 120s timeout 太短），
+姊妹 KB 10-31 扩写了这份共享文件（新增 **陷阱 9** 脱敏误判、**陷阱 10** 120s timeout 太短），
 两份再次漂移（姊妹 13,819 B vs 本 skill 9,713 B，diff 98 行）。
-按文件自身声明的权威规则（「本文件是跨 KB 的唯一权威来源」）**已覆盖同步**，
-两份 sha 均为 `5976db818c7c2dff`，逐字节一致。
+按文件自身声明的权威规则（「本文件是跨 KB 的唯一权威来源」）**已覆盖同步**。
+
+> ⚠️ **姊妹 KB 的 cron 在本轮窗口内又扩写了一次**（新增 **陷阱 11** 漏 `.md` 后缀的假阳性、
+> **陷阱 12** journal 计数须按进程启动时间切片）→ 本轮**二次同步**到 16,354 B，
+> 两份 sha 均为 `0caffefe40aa3399`。
+> → **教训：姊妹 KB 与本 skill 同窗口跑，两边都会写共享文件 → 同步动作要在自己轮次的**
+> **最后做一次，否则会漏掉对方刚写的段落。**
 
 ### ② 移植姊妹 KB 的 `scripts/check_e2e_request.py`（端到端请求探针）
 
@@ -80,7 +85,8 @@ proxy 转发到 gateway 的 read timeout 硬编码 120s，而 KB 注入后 syste
   = 进程启动 +20h = **第 4 次 5h 排期**，符合 `schedule_reload()` 的 `try/except/finally` 链
 - 11:04:52 / 11:05:38 出现的短命线程是 **Flask 请求线程**（`app.run(threaded=True)`），非重载线程
 - 四环境变量到位（`PROXY_PORT` / `HERMES_URL` / `HERMES_API_KEY` len=21 / `SKILL_NAME`）
-- `journalctl` 的 `Unknown key name` 计数 = **0**；HTTP 500 计数 = **0**
+- `journalctl` **按当前进程启动时间切片**：`Unknown key` = **0**、HTTP 500 = **0**、HTTP 502 = **0**
+  （陷阱 12：全量历史是 606 / 24，都是几十次重启前的老账，**不能当成今天的故障**）
 - 端口仅 **8643**（proxy）+ **8642**（gateway），无遗留压测进程
 
 ## 遗留
