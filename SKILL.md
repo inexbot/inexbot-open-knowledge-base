@@ -1,7 +1,7 @@
 ---
 name: inexbot-open-knowledge-base
 description: "纳博特开放平台知识库 RAG：每天定时爬取 open.inexbot.com，由 hermes-skill-proxy 在请求时进行内存检索并注入 system prompt。"
-version: 1.14.0
+version: 1.15.0
 last_verified: 2026-11-02
 author: Hermes Agent
 license: MIT
@@ -856,6 +856,12 @@ lens = [len(d["content_snippet"]) for v in res.values() for d in v]
 print(lens)   # 全是 800 = 静默降级；远大于 800 = 正文读到了
 ```
 
+> ⚠️ **索引容器的名字是 `hsp._index_data`（下划线前缀），不是 `hsp.INDEXES`** ——
+> 后者**根本不存在**，写了会报 `AttributeError: module 'hsp' has no attribute 'INDEXES'`。
+> 结构是 `{kb_name: {url_path: doc_dict}}`，且**必须先调 `load_all_indexes()`** 否则是空的。
+> 拿不准就先 `print([a for a in dir(hsp) if 'index' in a.lower()])` 看真实名字，**别凭直觉猜**。
+> 2026-11-02 实测踩坑记录见 `references/shared-proxy-service-pitfalls.md` §陷阱 16。
+
 **判据**：`content_snippet` 长度应远大于 800（index.json 里的摘要上限）。
 全 800 = 正文没读到；**更糟的是不报错但只有 800 字**——LLM 拿到的是摘要不是全文，且无任何报错线索。
 
@@ -1156,18 +1162,20 @@ for slug in mod._md_slug_candidates(k):
 **对策**：
 
 ```bash
-# 1) 先比行数/字节/sha，确认方向（不要直接 cp）
-wc -lc ~/.hermes/skills/productivity/{inexbot,inexbot-open}-knowledge-base/references/shared-proxy-service-pitfalls.md
-sha1sum ~/.hermes/skills/productivity/{inexbot,inexbot-open}-knowledge-base/references/shared-proxy-service-pitfalls.md
-
-# 2) 出精确 diff（走文件路径，policy 禁 python3 -c）
-python3 /tmp/diff_shared.py     # 用 difflib.unified_diff(sister, ours)
-
-# 3) 按 diff 结论处置：
-#    - 姊妹更新且本 skill 无独有内容 → cp 覆盖
-#    - 本 skill 是超集 → 只把姊妹缺的行反向补进来（本轮就这么做的）
-#    - 双方各有独有内容 → 手工合并，**保留双方**
+# 仓库已带好脚本：一次给出方向 + 差异 + 决策建议（别手搓 difflib）
+python3 ~/.hermes/skills/productivity/inexbot-open-knowledge-base/scripts/diff_shared_pitfalls.py
+# exit 0 = 完全一致；exit 1 = 有差异；exit 2 = 文件缺失
 ```
+
+脚本会打印两边的行数/字节/sha1、各自的 `## 陷阱 N` 清单、
+**`ONLY IN SISTER`**（我们缺、该补）与
+**`ONLY IN OURS`**（我们独有、**盲目 cp 就会被抹掉**）两段，最后附 unified diff。
+
+| diff 结论 | 动作 |
+|---|---|
+| 姊妹更新且我们无独有 section | `cp` 覆盖 |
+| **我们是超集**（11-02 就是这种） | **反向补齐**：只把姊妹缺的行补进来，**保留我们的 section** |
+| 双方各有独有 section | 手工合并，**两边都保留** |
 
 ```bash
 # 同步后校验
@@ -1183,6 +1191,9 @@ sha1sum ~/.hermes/skills/productivity/{inexbot,inexbot-open}-knowledge-base/refe
 > ⚠️ 相关：姊妹 KB 的 agent 会直接改**本 skill 的 SKILL.md**（见姊妹那份 §陷阱 13）——
 > 看到 `_warning: ... was modified by sibling subagent` 时，
 > 先 `git diff` 看清对方加了什么，**在对方改动之上增量 patch**，不要 `edit` 全文重写。
+>
+> 📌 跨 KB 版本的「同步方向会反转」+「`hsp._index_data` 而非 `INDEXES`」
+> 见 `references/shared-proxy-service-pitfalls.md` §陷阱 15–16。
 
 ### ⚠️ 姊妹 KB 与本 skill 会并发 commit 同一个 proxy repo（2026-10-30）
 
