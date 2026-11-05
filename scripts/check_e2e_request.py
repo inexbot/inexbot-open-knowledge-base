@@ -17,7 +17,11 @@
     1 = 出现非 200（详见 stderr 判读）
 
 ⚠️ 必须用 /usr/bin/python3（沙盒 python3 没装 requests/flask）。
-⚠️ 客户端 timeout 必须 > proxy 的上游 timeout（现 300s）→ 用 -m 360。
+⚠️ 客户端 timeout 必须 > proxy 的上游 timeout：
+   2026-11-05 起 proxy 上游已是 **1800s**（unit Environment="HERMES_TIMEOUT=1800"，
+   proxy repo commit 846b3de）→ 默认用 **1860**。
+   （此前 proxy 是 300s 时用 360；改大 proxy 就必须同步改大客户端，否则长尾请求
+    会被客户端先掐断 → 拿到 000/exit 28，而不是真实的 502。）
 ⚠️ timeout 类故障是【随机】的 —— 单次 200 不能证明通过，必须连打多次。
 """
 
@@ -105,7 +109,8 @@ def classify(status, body):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", type=int, default=4, help="每个查询连打几次（默认 4）")
-    ap.add_argument("--timeout", type=int, default=360, help="客户端超时秒（默认 360）")
+    ap.add_argument("--timeout", type=int, default=1860,
+                    help="客户端超时秒（默认 1860）—— 必须大于 proxy 的上游 timeout")
     ap.add_argument("--query", action="append", default=None, help="自定义查询，可重复")
     ap.add_argument("--gateway-probe", action="store_true",
                     help="额外直打 gateway 8642 量真实耗时")
