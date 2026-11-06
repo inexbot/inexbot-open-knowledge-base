@@ -138,3 +138,11 @@ ours    695 lines  34177 bytes  sha1=fcb7c00f4b671bcaa4980db3746189707c28fd30
 | `inexbot-open-knowledge-base` | 本轮 commit | ✅ 待 push（见当轮报告） |
 | `hermes-skill-proxy` | **`846b3de`** | ✅ 已 push，`a331618..846b3de`，工作树干净 |
 | `inexbot-knowledge-base`（姊妹） | `131c7fd` | 有未提交改动（`M SKILL.md` + 2 个 `??` reference）→ **本 skill 不代提交**，仅报告点名 |
+
+## 八、本轮新增的可复用资产
+
+| 文件 | 用途 |
+|---|---|
+| `scripts/check_proxy_env.py` | **「补丁真的上线了」守卫**：校验线上 `/proc/<pid>/environ` 的 5 个环境变量是否到位且等于代码默认值；`--units` 时额外比对 `/etc` 部署版与 repo 模板两份 unit。hash-only 输出（避免密钥明文 + Hermes 输出脱敏误判）。exit 0/1/2 |
+| `references/proxy-deployment-verification.md` | 完整分析：①「文件在磁盘 / systemd 知道 / 进程带着」三个「在」的区分；② 2026-11-05 的「补丁滞留 4 天」现场；③ sha 摘要判读法与脱敏陷阱表；④ restart 的最佳时机（无 probe 在飞的窗口）；⑤ 三层 timeout 改动要同时改的三处；⑥ 并发 commit 良性竞态的判读 |
+| `SKILL.md` | 新增「什么时候该 restart proxy」一节 + 「跑 e2e 探针的两个前置条件」一节；标准验证序列新增第 6 步（可选，改过 unit/proxy 后必跑） |
