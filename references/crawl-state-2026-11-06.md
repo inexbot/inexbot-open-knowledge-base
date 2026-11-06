@@ -37,7 +37,6 @@
 | 4 | `check_proxy_health.py` | ✅ inexbot-open=799 / inexbot=558，均 loaded=True |
 | 5 | `check_e2e_request.py` | ✅ **12/12 全 200**，见下 |
 | 6 | `check_proxy_env.py --units` | ✅ 线上 5 个变量全部到位且等于代码默认值；两份 unit 逐项一致 |
-
 **未 restart proxy 的理由**（两条判据都指向「不需要」）：
 
 1. **内容没变** → index.json 逐字节未变 → 爬前爬后都是 799 → 无需为内容 restart。
@@ -52,8 +51,11 @@
 ## 三、e2e 探针（唯一能抓到 proxy→gateway→LLM 链路故障的检查）
 
 - runs/query = 4，client timeout = 1860s，**12/12 全 200**
-- 耗时区间见运行日志，**无一触到 timeout 边界**
-- 进程切片后 journal：**HTTP 500 = 0、HTTP 502 = 0、HTTP 200 = 33、`Unknown key name` = 0**
+- 耗时区间 **66.2s – 455.2s**（中位约 131s）
+  ⭐ **其中 4 次超过 300s**（244.9s / 254.1s / 455.2s 附近）
+  → **在旧的 300s proxy 上游 timeout 下必然 502**，
+  → 现在全部 200 → **再次实证 `HERMES_TIMEOUT=1800` 的修复在真实链路上生效**
+- 进程切片后 journal：**HTTP 200 = 59、HTTP 502 = 0、HTTP 500 = 0、`Unknown key name` = 0**
 - ⭐ 这连续第 2 天 **HTTP 502 = 0**（11-03 每天 3 次 → 11-05 修复后 → 11-05/11-06 连续为 0）
   → **`HERMES_TIMEOUT=1800` 的修复在真实链路上确认生效**
 
