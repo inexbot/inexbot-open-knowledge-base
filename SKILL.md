@@ -1,7 +1,7 @@
 ---
 name: inexbot-open-knowledge-base
 description: "纳博特开放平台知识库 RAG：每天定时爬取 open.inexbot.com，由 hermes-skill-proxy 在请求时进行内存检索并注入 system prompt。"
-version: 1.19.0
+version: 1.20.0
 last_verified: 2026-11-06
 author: Hermes Agent
 license: MIT
@@ -687,6 +687,18 @@ md_root = idx_root / "md"   # md 文件名同样是把 URL path 的 / 替换成 
 hash-only 输出避免密钥明文与 Hermes 输出脱敏误判；`--units` 同时比对
 `/etc` 部署版与 repo 模板两份 unit）见 `references/proxy-deployment-verification.md`。
 
+**线上代码新鲜度守卫**（`scripts/check_proxy_staleness.py` —— 按 **AST 指纹**
+而非 mtime 判定「线上进程是否行为陈旧」；只改注释/docstring 时判定为等价，
+避免无谓 restart 打断姊妹 KB 的探针）见上文「什么时候该 restart proxy」。
+
+**共享文件合并工具**（`scripts/merge_shared_pitfalls.py` —— difflib 三方合并
+「以姊妹为基底 + 把本 skill 独有的 hunk 贴回」，并**按 section 标题双向校验**
+「姊妹 missing=0 / 本 skill 0 丢失」）见上文「共享文件同步」一节。
+
+**本轮新增两个脚本的完整由来与实测数据**（合并脚本的 opcode 决策表、
+AST 指纹判据的原理、与 `check_proxy_env.py` 的分工、「mtime 太粗」的通用教训）
+见 `references/crawl-state-2026-11-06-assets.md`。
+
 ### i18n slug 碰撞会留"无前缀"md 残留
 
 旧版 crawler 的 `slugify()` 不会给 md 文件名加 locale 前缀；因此 `/zh/foo` 与 `/en/foo` 都生成 `foo.md`，后者覆盖前者。下一次升级到带 locale 前缀的新 crawler 后，`md/` 目录下会看到**三组文件并存**：
@@ -1102,6 +1114,32 @@ ps -o pid,lstart,etime -p $(pgrep -f hermes-skill-proxy.py | head -1)
    → **必须** `daemon-reload` + `restart`，并用 `scripts/check_proxy_env.py --units`
    验证线上进程真的带上了新值。
 
+> ⚠️ **别用 mtime 判断「线上是不是旧代码」——那把尺子太粗。**
+> mtime 规则（「patch 文件 mtime 晚于进程启动时间 = 线上没带补丁」）
+> 只在**补丁改了行为**时才成立。若那次改动**只是注释 / docstring**，
+> mtime 会说「陈旧 → 该重启」，但**行为完全没变** → 重启纯属净伤害
+> （会打断姊妹 KB 正在飞的 e2e 探针，陷阱 1 / 陷阱 20）。
+>
+> **用 AST 判据（按内容，不是按时间）**：
+>
+> ```bash
+> python3 $SK/scripts/check_proxy_staleness.py
+> # exit 0 = 线上进程跑的行为等价于 HEAD → 不需要 restart
+> # exit 1 = 行为上真的陈旧 → 需要 restart
+> ```
+>
+> 脚本做三件事：① 找出线上进程实际加载的 commit（按「进程启动时间之前的
+> 最新 commit」推定）；② diff 该 commit 的 `hermes-skill-proxy.py` 与 HEAD 的；
+> ③ **剥掉 docstring 后做 AST 指纹比对** —— 指纹相同 = 只差注释 = 行为等价。
+>
+> **2026-11-06 实测**：线上进程 11-05 11:02:57 起、加载 `846b3de`；
+> HEAD 是 `abb129c`（11-05 11:14）。mtime 规则会说「陈旧」，
+> 但 diff **只有 `_md_slug_candidates()` 里新增的 5 行 docstring 注释**
+> → AST 指纹一致 → **行为完全等价** → **不 restart**（避免打断姊妹的探针）。
+>
+> 💡 **和 `check_proxy_env.py` 的分工**：那个查**环境变量**（unit / process），
+> 这个查**代码**（AST）。两个都要在「改了 unit 或 proxy 代码后」跑。
+
 **restart 的最佳时机**：选「**crawler 在跑、但没有任何 probe 在飞**」的窗口。
 
 ```bash
@@ -1193,6 +1231,14 @@ python3 $SK/scripts/check_proxy_health.py
 > 「补丁『写了』≠ 补丁『上线了』」的专用守卫 —— unit 文件改了但进程没 restart，
 > 线上跑的仍是旧代码（2026-11-05 现场：unit 11-04 就改对了，进程 10-31 起的，
 > **补丁滞留 4 天**，用户随机 502 整整 4 天没人发现）。
+>
+> 📌 **第 7 步（可选，但 proxy 的 .py 有改动时必跑）**：判定线上进程是否**行为上**陈旧
+> ```bash
+> python3 $SK/scripts/check_proxy_staleness.py
+> ```
+> 按 **AST 指纹**（剥掉 docstring）比对「线上进程加载的 commit」与 HEAD，
+> 而不是靠 mtime —— mtime 会把「只改了注释」误判成陈旧，导致无谓的 restart
+> 打断姊妹 KB 的探针。exit 0 = 不需要 restart；exit 1 = 需要 restart。
 
 ### ⚠️ 跑 e2e 探针的两个前置条件（2026-11-05 踩坑）
 
@@ -1338,7 +1384,30 @@ python3 ~/.hermes/skills/productivity/inexbot-open-knowledge-base/scripts/diff_s
 |---|---|
 | 姊妹更新且我们无独有 section | `cp` 覆盖 |
 | **我们是超集**（11-02 就是这种） | **反向补齐**：只把姊妹缺的行补进来，**保留我们的 section** |
-| 双方各有独有 section | 手工合并，**两边都保留** |
+| 双方各有独有 section（11-06 就是这种） | **跑合并脚本**（下节），**不要手工合并** |
+
+> ⚠️ **「双方各有独有 section」不要手工合并。** 2026-11-06 现场：
+> 姊妹 787 行/38,872 B vs 本 skill 760 行/37,406 B，**双方各有独有内容**
+> （姊妹独有：陷阱 11 的「三连假阳性指纹」表 + 陷阱 17 的「已闭环」注解；
+> 本 skill 独有：陷阱 20 里的 `check_proxy_env.py --units` 守卫段 +
+> `deployment-readiness-checklist.md` 交叉引用）。
+> 手工合并一个 39 KB / 21 个编号 section 的文件**极易漏掉或重复**，
+> 而且失败是**静默的**（文件看起来正常，只是 `git diff` 里出现一个很大的 hunk）。
+>
+> **用现成的合并脚本**（difflib 三方合并，**以姊妹为基底 + 把本 skill 独有的
+> hunk 贴回**，然后**按 section 标题双向校验**）：
+>
+> ```bash
+> # 仓库已带好脚本：一次合并 + 校验「姊妹 missing=0、本 skill 0 丢失」
+> python3 ~/.hermes/skills/productivity/inexbot-open-knowledge-base/scripts/merge_shared_pitfalls.py --check   # 干跑
+> python3 ~/.hermes/skills/productivity/inexbot-open-knowledge-base/scripts/merge_shared_pitfalls.py             # 写盘
+> ```
+>
+> 2026-11-06 实测：合并后 **姊妹 21 个 section missing=0、本 skill 0 个 section 丢失**，
+> 姊妹独有 2 块 + 本 skill 独有 2 块**全部保留**，两份 sha 归一为 `50ce85500979`。
+>
+> ⚠️ **只有「双方各有独有 section」才需要跑合并脚本。**
+> 若一方是严格超集，走上面的「反向补齐」更简单，**不要**跑 merge。
 
 ```bash
 # 同步后校验
