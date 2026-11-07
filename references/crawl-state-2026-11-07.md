@@ -30,8 +30,15 @@
 **journal（按当前进程启动时间切片，950 行）**：`Unknown key` **0** / HTTP 500 **0** / HTTP 502 **0** /
 `RELOAD FAILED` **0** / HTTP 200 = **79**。
 
-**重载链活着**：定时器线程 TID 1871807 出生于 2026-11-07 08:03:32（= 进程 start + 21h = 第 5 次 5h 排期）。
-（11:22 的短命线程是 Flask 请求线程，非重载线程。）
+**重载链活着**：定时器线程 TID 1871807 出生于 **2026-11-07 08:03:33**，age = **3.34h**，
+下次触发 **13:03:33**（100 分钟后）。11:23 的短命线程是 Flask 请求线程，非重载线程。
+
+⚠️ **注意 age 判据**：本轮定时器 age = 3.34h，**落在姊妹 11-06 首版脚本的 `[3.5h, 5.25h]` 窗口之外** ——
+若沿用旧判据会**假报「重载链断裂」**并诱使下一轮 cron 做一次无谓 restart（还会打断姊妹的探针）。
+正确判据见下节（姊妹 11-07 已修正，本 skill 已移植守卫）。
+
+**姊妹 KB 磁盘已涨到 560**（本轮其 cron 又抓到 1 页），proxy 内存仍是 559 →
+「内存 ≠ 磁盘」出现在**姊妹**侧而非本 KB 侧；本 KB `inexbot-open` 内存 799 == 磁盘 799 ✅。
 
 **端口**：仅 8643（proxy，PID 1844673）+ 8642（gateway，PID 513004）；**无遗留压测进程**。
 
@@ -96,10 +103,37 @@ SKILL.md 里的链接指向不存在的文件 → **静默失效**（代码还�
 ⚠️ 探针跑完后姊妹 KB 才启动它自己的 e2e 探针（PID 1875491/1875500，11:22:31 起）——
 **本轮未 restart proxy，因此没有打断它**（若 restart，它的探针会拿到 `RemoteDisconnected`）。
 
+## 三·补·二、移植姊妹 KB 修正版「重载链守卫」
+
+姊妹 11-07 修正了**陷阱 21 的判据错误**：原脚本找 `age ∈ [3.5h, 5.25h]` 的线程，
+找不到就报 `[FAIL] 重载链可能已断裂` —— 但定时器 age 在 `[0, 5h)` 内**均匀分布**，
+⇒ **约 70% 的时间落在窗口外** → 周期性误报 → 诱使 cron 做无谓 restart。
+
+**本轮实测正好撞上这个假阳性**：定时器 age = **3.34h**，在旧窗口之外，
+但 `/health` 的 `inexbot-open` 799 == 磁盘 799 → **重载明明发生过，链是活的**。
+
+**已移植**姊妹的 `scripts/check_reload_timer.py`，并**改了它一处硬编码**：
+姊妹版只读 `kb/inexbot/index.json`，对以 `kb/inexbot-open` 为对象的 skill **判据无意义**。
+本 skill 版改为**同时检查两个 KB 的磁盘索引**，并以 `inexbot-open` 为 `in_sync` 判据：
+
+```
+磁盘 index.json : {'inexbot': 560, 'inexbot-open': 799}
+proxy 内存索引   : {'inexbot': 559, 'inexbot-open': 799}
+  inexbot       disk=560 mem=559 PENDING RELOAD
+  inexbot-open  disk=799 mem=799 OK
+[OK] 重载链存活：定时器线程 tid=1871807 -> 下次重载 2026-11-07 13:03:33 (在 100 分钟后)
+```
+
+**判读要点**：「内存 ≠ 磁盘」本身**不是故障** —— 先算「下次自动重载在什么时候」；
+只要自动重载还在 1 小时内，就**不要 restart**（收益为零、风险为正）。
+
 ## 四、姊妹 KB 状态（不代提交，仅记录）
 
-`inexbot-knowledge-base` 工作树：`M references/crawl-state-2026-11-06.md`、
-`M references/shared-proxy-service-pitfalls.md`、`?? scripts/check_reload_timer.py`。
+`inexbot-knowledge-base` 磁盘索引本轮涨到 **560**（其 cron 抓到 1 页新内容），
+proxy 内存 559 → 待下次自动重载（13:03:33）。
+
+其工作树本轮末态：`M SKILL.md`、`M references/large-family-kb-navigation.md`、
+`?? references/stamping-process-manuals.md`、`?? scripts/scan_kb_topic.py`。
 **属它自己 cron 的职责**，本 skill 不代提交，仅在此点名。
 
 其共享文件已被本 skill 的合并脚本读过（姊妹那侧 sha1 `bbabe6007a4e`），
