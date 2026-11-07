@@ -23,11 +23,15 @@
 | 2) `check_index_hygiene.py` | 零宽字符 **0** / 空标题 **0** / 幻影 token 可达 **0** / 旧 API 可达 **0** / 空 snippet 34（上游空目录页，正常） |
 | 3) `check_retrieval_chain.py` | **静默降级(==800) = 0**；短正文 4 条 = 伺服报警占位页（上游本来就短，61–71 B）；异常 False |
 | 4) `check_proxy_health.py` | `inexbot-open` **799** ✅ / `inexbot` **559** ✅；gateway 8642 可达 |
-| 5) `check_e2e_request.py` | 见下（标准序列的关键一步，唯一能抓「proxy→gateway→LLM」链路故障的检查） |
+| 5) `check_e2e_request.py` | **12/12 全 200**（3 query × 4 runs，28.2–140.1s，**0 次 502**）；标准序列的关键一步，唯一能抓「proxy→gateway→LLM」链路故障的检查 |
 | 6) `check_proxy_env.py --units` | 5 个变量**全部到位**且 live process / `/etc` unit / repo 模板 **三处 sha12 逐项一致**；`HERMES_TIMEOUT` sha12=`e49ec846db75`（=1800）✅ |
 | 7) `check_proxy_staleness.py` | 线上进程 PID 1844673（11-05 11:02:57 起）源码 **== HEAD `abb129c`** → **NOT stale，无需 restart** |
 
-**journal（按当前进程启动时间切片，937 行）**：`Unknown key` **0** / HTTP 500 **0** / HTTP 502 **0** / `RELOAD FAILED` **0**。
+**journal（按当前进程启动时间切片，950 行）**：`Unknown key` **0** / HTTP 500 **0** / HTTP 502 **0** /
+`RELOAD FAILED` **0** / HTTP 200 = **79**。
+
+**重载链活着**：定时器线程 TID 1871807 出生于 2026-11-07 08:03:32（= 进程 start + 21h = 第 5 次 5h 排期）。
+（11:22 的短命线程是 Flask 请求线程，非重载线程。）
 
 **端口**：仅 8643（proxy，PID 1844673）+ 8642（gateway，PID 513004）；**无遗留压测进程**。
 
@@ -76,6 +80,21 @@ SKILL.md 里的链接指向不存在的文件 → **静默失效**（代码还�
 - `write_file` 写外层脚本 + `terminal(background=true)` 调脚本文件（不用 `-lic` wrapper）
 - `execute_code` 内联 `os.kill(pid,0)` + `time.sleep(15)` 循环等长任务（绕开 60s clamp）
 - e2e 探针走 background + 客户端 timeout 1860s（> proxy 上游 1800s）
+
+## 三·补、e2e 探针明细
+
+| query | 4 次耗时 | 状态 |
+|---|---|---|
+| C1102 控制器 通讯接口 有哪些 | 38.2 / 75.7 / 135.9 / 28.2s | 4/4 = 200 |
+| 冲压工艺 手册 参数设置 | 82.5 / 140.1 / 113.2 / 67.9s | 4/4 = 200 |
+| 示教器 操作手册 功能说明 | 81.6 / 111.9 / 127.8 / 74.8s | 4/4 = 200 |
+
+合计 **12/12 HTTP 200，0 次 502 / 500**。客户端 timeout 1860s（> proxy 上游 1800s）。
+本轮耗时全部 < 300s，未触及边界 —— 这是**连续第 3 天 502 计数为 0**，
+`HERMES_TIMEOUT=1800` 在真实链路上持续生效。
+
+⚠️ 探针跑完后姊妹 KB 才启动它自己的 e2e 探针（PID 1875491/1875500，11:22:31 起）——
+**本轮未 restart proxy，因此没有打断它**（若 restart，它的探针会拿到 `RemoteDisconnected`）。
 
 ## 四、姊妹 KB 状态（不代提交，仅记录）
 
