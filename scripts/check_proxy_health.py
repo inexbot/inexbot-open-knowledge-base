@@ -36,7 +36,7 @@ TIMEOUT = 5  # seconds
 # since 10-19 — the zh sidebar +2/cycle growth has fully stopped).
 BASELINES = {
     "inexbot-open": 799,   # flat since 2026-10-10; growth has stopped
-    "inexbot":       558,  # doc.inexbot.com (sister KB); grew 547 → 557 → 558
+    "inexbot":       560,  # doc.inexbot.com (sister KB); grew 547 → 557 → 558 → 560
 }
 
 

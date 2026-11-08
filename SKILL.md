@@ -1,8 +1,8 @@
 ---
 name: inexbot-open-knowledge-base
 description: "纳博特开放平台知识库 RAG：每天定时爬取 open.inexbot.com，由 hermes-skill-proxy 在请求时进行内存检索并注入 system prompt。"
-version: 1.21.0
-last_verified: 2026-11-07
+version: 1.23.0
+last_verified: 2026-11-08
 author: Hermes Agent
 license: MIT
 metadata:
@@ -500,9 +500,9 @@ systemd-analyze verify /tmp/probe-fixed.service 2>&1 | grep probe-fixed
 curl http://localhost:8643/health
 ```
 
-正常返回（inexbot-open 当前应约为 **799** 篇：自 2026-08-25 起连续 7 次稳态 721 后，2026-09-29 zh sidebar +74 涨到 795，2026-10-01 再 +2 涨到 797，2026-10-10 再 +2 涨到 799，2026-10-18/19/21/22/23/25/26/27/28/29/**30**/31/11-01/**11-02** **连续 14 次持平（docs 数自 10-10 起 23 天零新增）**；en/kr 长期稳态 178；`inexbot` 约 **558** 篇；2026-11-02 现场验证）：
+正常返回（inexbot-open 当前应约为 **799** 篇：自 2026-08-25 起连续 7 次稳态 721 后，2026-09-29 zh sidebar +74 涨到 795，2026-10-01 再 +2 涨到 797，2026-10-10 再 +2 涨到 799，2026-10-18/19/21/22/23/25/26/27/28/29/**30**/31/11-01/**11-02**/**11-08** **连续 19 次持平（docs 数自 10-10 起 29 天零新增）**；en/kr 长期稳态 178；`inexbot` 约 **560** 篇；2026-11-08 现场验证）：
 ```json
-{"status":"ok","indexes":{"inexbot":{"docs":558,"loaded":true},"inexbot-open":{"docs":799,"loaded":true}}}
+{"status":"ok","indexes":{"inexbot":{"docs":560,"loaded":true},"inexbot-open":{"docs":799,"loaded":true}}}
 ```
 
 > 历史基线快照：534（2026-07-18）→ 552（2026-07-26）→ 636（2026-07-31）→ 715（2026-08-21）→ **721（2026-08-25 起连续 7 次稳态，截至 2026-09-21）** → **795（2026-09-29，+74 zh sidebar 新增，打破稳态）** → **797（2026-10-01，+2 zh sidebar 持续增长）** → **799（2026-10-10，再 +2 zh sidebar 持续增长）** → **799（2026-10-18，首次持平）** → **799（2026-10-19，连续第二次持平）** → **799（2026-10-21，连续第三次持平，字节级对比首次可用，verdict=IDENTICAL）** → **799（2026-10-22，连续第四次持平，2,448,900 bytes 与 10-19 逐字节相同；姊妹 KB inexbot 反而 +1 到 558）**。每次良性增长都直接 patch 进 `check_proxy_health.py` 的 `BASELINES`。
@@ -694,7 +694,8 @@ hash-only 输出避免密钥明文与 Hermes 输出脱敏误判；`--units` 同�
 **重载链守卫**（`scripts/check_reload_timer.py` —— 判定 proxy 的 5h 自动重载链是否还活着，
 并算出**下次重载时刻**；移植自姊妹 KB 11-07 的修正版：定时器 age 在 `[0, 5h)` 内**均匀分布**，
 **不可**用「age 落在 5h 附近」当判据（会周期性假报「链断了」→ 诱使 cron 做无谓 restart）。
-本 skill 版同时检查两个 KB 的磁盘索引，以 `inexbot-open` 为 `in_sync` 判据）见上文「什么时候该 restart proxy」。
+本 skill 版同时检查两个 KB 的磁盘索引，以 `inexbot-open` 为 `in_sync` 判据）
+**完整方法论、判读表、以及「移植姊妹脚本后必查硬编码」见 `references/reload-chain-guard.md`**。
 
 **共享文件合并工具**（`scripts/merge_shared_pitfalls.py` —— difflib 三方合并
 「以姊妹为基底 + 把本 skill 独有的 hunk 贴回」，并**按 section 标题双向校验**
@@ -702,7 +703,58 @@ hash-only 输出避免密钥明文与 Hermes 输出脱敏误判；`--units` 同�
 
 **本轮新增两个脚本的完整由来与实测数据**（合并脚本的 opcode 决策表、
 AST 指纹判据的原理、与 `check_proxy_env.py` 的分工、「mtime 太粗」的通用教训）
-见 `references/crawl-state-2026-11-06-assets.md`、**`references/crawl-state-2026-11-07.md`（**799/559 连续第十八次持平（纯稳态）**：index.json **2,450,869 bytes 与 10-29→11-06 逐字节相同**、verdict=IDENTICAL、零网络请求（0 次 `✓`、raw/ 仍是 10-23）、**3:26.3** 落在稳态带内、md/ 与 raw/ 今日均零重写、无 `.tmp` 残留；**本轮再次闭合「报告写『遗留：无』但实际没提交」（陷阱 14 第 3 次复发）**——11-06 的三个文件 `scripts/check_proxy_staleness.py` / `scripts/merge_shared_pitfalls.py` / `references/crawl-state-2026-11-06-assets.md` 当时仍是 `??` 未跟踪 → 若被 `git pull` 静默回退，「线上代码是否行为陈旧」的守卫会**悄悄消失**而 `crawler.py` 的三修还在 → **看起来一切正常，实则失去守卫**（静默失效）；本轮已 add+commit+push（`1d4d488`）；**共享文件第四次走「先 diff 再决定」**——姊妹 894 行/44,467 B（sha1 `bbabe6007a4e`）vs 本 skill 797 行/39,560 B（sha1 `50ce85500979`），**双方各有独有 section** → 跑 `scripts/merge_shared_pitfalls.py`（**不手工合并**）→ 合并后 898 行/44,762 B，校验「姊妹 23 个 section missing=0、本 skill 0 个 section 丢失」、本 skill 独有 hunk 3 个全部保留；**7 步标准序列全绿**——crawl_state=IDENTICAL / index_hygiene（零宽 0、空标题 0、幻影 token 可达 0、旧 API 可达 0）/ retrieval_chain（**静默降级 ==800 = 0**，短正文 4 条 = 伺服报警占位页 61–71 B，属上游本来就短）/ proxy_health（open 799 + 姊妹 559）/ **check_proxy_env --units（5 个变量三处 sha12 逐项一致，`HERMES_TIMEOUT` sha12=`e49ec846db75` = 1800 ✅）**/ **check_proxy_staleness（线上 PID 1844673 源码 == HEAD `abb129c` → NOT stale，无需 restart）**/ **e2e 探针 12/12 全 200**（28.2–140.1s，**0 次 502** → 连续第 3 天 502 计数为 0）；journal 按进程切片 950 行：`Unknown key` 0 / HTTP 500 0 / HTTP 502 0 / `RELOAD FAILED` 0 / HTTP 200 = 79；端口仅 8643+8642 无遗留压测进程；**重载链活着**（定时器线程 TID 1871807 = 11-07 08:03:33，age 3.34h，下次触发 13:03:33 —— ⚠️ **本轮 age 落在姊妹 11-06 首版脚本的 `[3.5h, 5.25h]` 窗口之外，会假报「链断了」**，已移植姊妹 11-07 修正版 `check_reload_timer.py` 并改掉其硬编码路径）；**姊妹 KB 在本轮探针跑完后才起它自己的探针（11:22:31）→ 本轮未 restart proxy，没有打断它**；**proxy 未 restart 的两条理由**——① index 逐字节未变（无需为内容 restart）② 线上源码 AST 等价于 HEAD（无需为部署 restart）→ 顺带避免打断姊妹 KB 的探针（陷阱 1 / 陷阱 20））**
+见 `references/crawl-state-2026-11-06-assets.md`。
+
+**最新一轮爬取快照**见 `references/crawl-state-2026-11-08.md`
+（**799/560 连续第十九次持平（本 KB 纯稳态）**：index.json **2,450,869 bytes 与 10-29→11-07 逐字节相同**、
+verdict=IDENTICAL、零网络请求（0 次 `✓`、raw/ 仍是 10-23）、**3:11.5** 落在稳态带内、
+md/ 与 raw/ 今日均零重写、无 `.tmp` 残留；姊妹 KB **+2 → 560**（真实增长，非本 skill 抽取变更）；
+**8 步标准序列全绿** —— crawl_state=IDENTICAL / index_hygiene（零宽 0、空标题 0、
+幻影 token 可达 0、旧 API 可达 0）/ retrieval_chain（**静默降级 ==800 = 0**，
+短正文 4 条 = 伺服报警占位页 61–71 B，属上游本来就短）/ proxy_health（open 799 + 姊妹 560）/ 
+**check_proxy_env --units（5 个变量三处 sha12 逐项一致，`HERMES_TIMEOUT` sha12=`e49ec846db75` = 1800 ✅）**/ 
+**check_proxy_staleness（线上 PID 1844673 源码 == HEAD `abb129c` → NOT stale，无需 restart）**/ 
+**check_reload_timer（重载链存活，下次重载 14:03:46）**/ 
+**e2e 探针 12/12 全 200**（37.6–246.4s，**0 次 502** → 连续第 4 天 502 计数为 0，
+其中 246.4s 在旧 300s 上限下必然 502 → 再次实证 `HERMES_TIMEOUT=1800` 生效）；
+journal 按进程切片 1301 行：`Unknown key` 0 / HTTP 500 0 / HTTP 502 0 / `RELOAD FAILED` 0 / HTTP 200 = 114；
+端口仅 8643+8642 无遗留压测进程；**姊妹 KB 在本轮探针跑完后才起它自己的探针 → 本轮未 restart proxy，没有打断它**；
+**proxy 未 restart 的两条理由** —— ① index 逐字节未变（无需为内容 restart）
+② 线上源码 AST 等价于 HEAD（无需为部署 restart）→ 顺带避免打断姊妹 KB 的探针（陷阱 1 / 陷阱 20）；
+**陷阱 14 第 4 次复发** —— 11-07 的 `SKILL.md` 改动 + `references/reload-chain-guard.md`（125 行，
+SKILL.md 第 697 行引用的目标文件）当时仍是 `M` / `??` 未入库 → 若被 `git pull` 静默回退，
+**SKILL.md 的链接会指向不存在的文件** → 本轮已 add+commit+push；
+**共享文件同步方向再次反转** —— 姊妹 919 行/46,125 B（sha1 `9123cfa68c20`）
+vs 本 skill 926 行/46,718 B（sha1 `675dc4fe8e6a`），**姊妹独有行 = 0、本 skill 独有行 = 7**，
+22 个 section 标题完全一致 → 那 7 行是**过时残留**（陷阱 21 里被否定的旧判据「age 落在 4~5 小时」、
+旧 exit 1 判据注释、过时的 558/559 基线并存）→ **本 skill 行数更多却更差 → 直接 `cp` 覆盖**。
+⇒ **「行数多 ≠ 权威」**：判据是「姊妹独有行数 vs 本 skill 独有行数，且独有内容是不是过时/重复」，
+不是行数本身（详见下节「同步方向的判定规则」）。）
+
+**上一轮快照**见 `references/crawl-state-2026-11-07.md`
+（**799/559 连续第十八次持平（纯稳态）**：index.json **2,450,869 bytes 与 10-29→11-06 逐字节相同**、
+verdict=IDENTICAL、零网络请求（0 次 `✓`、raw/ 仍是 10-23）、**3:26.3** 落在稳态带内、
+md/ 与 raw/ 今日均零重写、无 `.tmp` 残留；**本轮再次闭合「报告写『遗留：无』但实际没提交」**
+（陷阱 14 第 3 次复发）—— 11-06 的三个文件 `scripts/check_proxy_staleness.py` /
+`scripts/merge_shared_pitfalls.py` / `references/crawl-state-2026-11-06-assets.md`
+当时仍是 `??` 未跟踪 → 若被 `git pull` 静默回退，「线上代码是否行为陈旧」的守卫会
+**悄悄消失**而 `crawler.py` 的三修还在 → **看起来一切正常，实则失去守卫**（静默失效）；
+**共享文件第四次走「先 diff 再决定」** —— 姊妹 894 行/44,467 B（sha1 `bbabe6007a4e`）
+vs 本 skill 797 行/39,560 B（sha1 `50ce85500979`），**双方各有独有 section** →
+跑 `scripts/merge_shared_pitfalls.py`（**不手工合并**）→ 合并后 898 行/44,762 B，
+校验「姊妹 23 个 section missing=0、本 skill 0 个 section 丢失」、本 skill 独有 hunk 3 个全部保留；
+**8 步标准序列全绿** —— crawl_state=IDENTICAL / index_hygiene（零宽 0、空标题 0、
+幻影 token 可达 0、旧 API 可达 0）/ retrieval_chain（**静默降级 ==800 = 0**，
+短正文 4 条 = 伺服报警占位页 61–71 B，属上游本来就短）/ proxy_health（open 799 + 姊妹 559）/ 
+**check_proxy_env --units（5 个变量三处 sha12 逐项一致，`HERMES_TIMEOUT` sha12=`e49ec846db75` = 1800 ✅）**/ 
+**check_proxy_staleness（线上 PID 1844673 源码 == HEAD `abb129c` → NOT stale，无需 restart）**/ 
+**check_reload_timer（重载链存活，下次重载 13:03:33）**/ 
+**e2e 探针 12/12 全 200**（28.2–140.1s，**0 次 502** → 连续第 3 天 502 计数为 0）；
+journal 按进程切片 950 行：`Unknown key` 0 / HTTP 500 0 / HTTP 502 0 / `RELOAD FAILED` 0 / HTTP 200 = 79；
+端口仅 8643+8642 无遗留压测进程；**姊妹 KB 在本轮探针跑完后才起它自己的探针（11:22:31）→
+本轮未 restart proxy，没有打断它**；**proxy 未 restart 的两条理由** ——
+① index 逐字节未变（无需为内容 restart）② 线上源码 AST 等价于 HEAD（无需为部署 restart）
+→ 顺带避免打断姊妹 KB 的探针（陷阱 1 / 陷阱 20））。
 
 ### i18n slug 碰撞会留"无前缀"md 残留
 
@@ -1001,7 +1053,7 @@ curl http://localhost:8643/health   # 确认 docs 数量是新的
 python3 ~/.hermes/skills/productivity/inexbot-open-knowledge-base/scripts/check_proxy_health.py
 ```
 
-会输出两个 KB 的 docs 数、loaded 状态、对比预期基线（inexbot-open = **799**；inexbot = 558；2026-10-22 起更新）。不一致时 exit code = 1，方便 cron 检测失败。同理 `curl .../health` 单独跑、纯 stdout、不带 pipe，也没事。
+会输出两个 KB 的 docs 数、loaded 状态、对比预期基线（inexbot-open = **799**；inexbot = 560；2026-11-08 起更新）。不一致时 exit code = 1，方便 cron 检测失败。同理 `curl .../health` 单独跑、纯 stdout、不带 pipe，也没事。
 
 > 基线随站点增长而漂移——crawl 跑完后若 docs 数比基线高、且 `/health` 显示 `loaded=True`、三个 locale 都在（zh/en/kr 各自条目数 > 0），属良性增长。判定「真故障」至少要看：
 > 1. docs 数是否**骤降**（如 552 → 100，说明 sidebar 提取挂了）
@@ -1118,6 +1170,34 @@ ps -o pid,lstart,etime -p $(pgrep -f hermes-skill-proxy.py | head -1)
 2. **代码/配置变了才需要为部署 restart**：改了 proxy 的 `.py` 或 unit 的 `Environment=`
    → **必须** `daemon-reload` + `restart`，并用 `scripts/check_proxy_env.py --units`
    验证线上进程真的带上了新值。
+
+> 💡 **判据 1 拿不准时，用重载链守卫给出确切答案**：
+> ```bash
+> /usr/bin/python3 $SK/scripts/check_reload_timer.py
+> ```
+> 它同时给出三件事：① 定时器线程 tid 与出生时刻 → **下次自动重载的确切时间**；
+> ② **两个 KB 的磁盘 index vs proxy 内存索引**逐项对比；
+> ③ 本 KB（`inexbot-open`）是否已同步。
+>
+> **判读规则**：
+>
+> | 观测 | 结论 | 动作 |
+> |---|---|---|
+> | 本 KB 内存 == 磁盘 | 已重载，链是活的 | **不要 restart** |
+> | 内存 != 磁盘，但**下次重载在 1 小时内** | 正常重载窗口 | **不要 restart**（收益为零、风险为正） |
+> | 内存 != 磁盘，且**已过预定重载时刻**仍不更新 | 真故障 | 才考虑 restart |
+> | 脚本报 `[FAIL]`（无 age<5h 非主线程 **且** 内存≠磁盘） | 链真断了 | `systemctl restart` |
+>
+> ⚠️ **「内存 ≠ 磁盘」本身不是故障** —— 先算「下次自动重载在什么时候」。
+> 姊妹 KB 11-07 修正了旧判据的错误：旧脚本找 `age ∈ [3.5h, 5.25h]` 的线程，
+> 找不到就报「链断了」—— 但定时器 age 在 `[0, 5h)` 内**均匀分布**，
+> **约 70% 的时间落在窗口外** → **周期性假报** → 诱使 cron 做无谓 restart。
+> 2026-11-07 实测：本 skill 的定时器 age = 3.34h（旧窗口之外），
+> 而 `/health` 的 `inexbot-open` 799 == 磁盘 799 → **重载明明发生过，链是活的**。
+>
+> ⚠️ **移植脚本后必查硬编码**：姊妹版 `check_reload_timer.py` 只读 `kb/inexbot/index.json`
+> —— 对以 `kb/inexbot-open` 为对象的 skill **判据无意义**（会比出一个错的 KB）。
+> 本 skill 版已改为**同时检查两个 KB**，以 `inexbot-open` 为 `in_sync` 判据。
 
 > ⚠️ **别用 mtime 判断「线上是不是旧代码」——那把尺子太粗。**
 > mtime 规则（「patch 文件 mtime 晚于进程启动时间 = 线上没带补丁」）
@@ -1244,6 +1324,22 @@ python3 $SK/scripts/check_proxy_health.py
 > 按 **AST 指纹**（剥掉 docstring）比对「线上进程加载的 commit」与 HEAD，
 > 而不是靠 mtime —— mtime 会把「只改了注释」误判成陈旧，导致无谓的 restart
 > 打断姊妹 KB 的探针。exit 0 = 不需要 restart；exit 1 = 需要 restart。
+>
+> 📌 **第 8 步（可选，但「要不要为内容 restart」拿不准时必跑）**：判定 5h 自动重载链
+> ```bash
+> /usr/bin/python3 $SK/scripts/check_reload_timer.py
+> ```
+> 它给出**下次自动重载的确切时刻**（定时器线程的出生时间 + 5h），并比对
+> **两个 KB 的磁盘 index vs proxy 内存索引**。
+> **判读**：「内存 ≠ 磁盘」本身**不是故障** —— 先看「下次重载在什么时候」：
+> 自动重载还在 1 小时内 → **不要 restart**（收益为零、风险为正）。
+>
+> ⚠️ **不要用「定时器 age 落在 5h 附近」当判据**（2026-11-07 实测踩到）：
+> 定时器 age 在 `[0, 5h)` 内**均匀分布** ⇒ 约 **70% 的时间**落在旧脚本的
+> `[3.5h, 5.25h]` 窗口**之外** → 旧脚本会**周期性假报「重载链断裂」**
+> → 诱使下一轮 cron 做一次无谓 restart（还会打断姊妹 KB 的探针）。
+> 姊妹 KB 11-07 已修正，本 skill 已移植修正版（姊妹版硬编码只读 `kb/inexbot`，
+> 本 skill 版改为**同时检查两个 KB**、以 `inexbot-open` 为 `in_sync` 判据）。
 
 ### ⚠️ 跑 e2e 探针的两个前置条件（2026-11-05 踩坑）
 
@@ -1390,6 +1486,33 @@ python3 ~/.hermes/skills/productivity/inexbot-open-knowledge-base/scripts/diff_s
 | 姊妹更新且我们无独有 section | `cp` 覆盖 |
 | **我们是超集**（11-02 就是这种） | **反向补齐**：只把姊妹缺的行补进来，**保留我们的 section** |
 | 双方各有独有 section（11-06 就是这种） | **跑合并脚本**（下节），**不要手工合并** |
+| **姊妹独有行 = 0**（11-08 就是这种） | **`cp` 覆盖** —— 见下方「同步方向的判定规则」 |
+
+### 📌 同步方向的判定规则：**行数多 ≠ 权威**（2026-11-08 实测）
+
+`diff_shared_pitfalls.py` 的 DECISION GUIDE 会把「我们行数更多」判成「反向补齐」，
+但它**不区分「独有 section」与「过时的重复行」**。11-08 现场是**反过来的**：
+
+| | 行数 | 字节 | sha1 | 姊妹独有行 | 本 skill 独有行 | section 标题 |
+|---|---|---|---|---|---|---|
+| 姊妹 | 919 | 46,125 | `9123cfa68c20` | — | — | 22 个 |
+| 本 skill | **926** | **46,718** | `675dc4fe8e6a` | **0** | **7** | 22 个（**完全一致**） |
+
+⇒ 本 skill 行数**更多**却**更差**：那 7 行是**过时残留**（陷阱 21 里被姊妹 11-07 明确否定的
+旧判据「age 落在 4~5 小时」、旧版 exit 1 判据注释、附录里 **558/559 两套基线并存**），
+**不属于任何独有 section**（22 个标题全同）→ 直接 `cp` 覆盖，**不需要跑合并脚本**。
+
+**判定顺序（按此走，不要凭行数猜）**：
+
+1. 跑 `diff_shared_pitfalls.py`，数 **姊妹独有行**（`-` 行）与 **本 skill 独有行**（`+` 行）；
+2. **姊妹独有行 = 0** → 姊妹没给我们任何新东西 → **直接 `cp` 覆盖**
+   （本 skill 的独有行需**逐条看过**确认是过时/重复，而非独有知识）；
+3. 姊妹独有行 > 0 且 section 标题集合**完全相同** → 多半也是同 section 内的过时残留 → 先 `cp` 再核对；
+4. section 标题集合**不同** → 才进入「反向补齐 / 跑合并脚本」两条路。
+
+> ⚠️ **姊妹独有行 > 0 时，也不能只看行数** —— 必须逐条看那几行是**知识**还是**过时残留**。
+> 「我们比姊妹多 7 行」既可能是「我们多了 7 条独有知识」（该反向补齐），
+> 也可能是「我们留着 7 行过时内容」（该 cp 覆盖）—— **两种情况行数完全一样**。
 
 > ⚠️ **「双方各有独有 section」不要手工合并。** 2026-11-06 现场：
 > 姊妹 787 行/38,872 B vs 本 skill 760 行/37,406 B，**双方各有独有内容**

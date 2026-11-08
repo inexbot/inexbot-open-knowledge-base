@@ -800,8 +800,6 @@ ps aux | grep -E "check_e2e_request|crawler.py|refresh_drift|regen_md" | grep -v
 该线程在**上次触发时出生**，活满一个 `RELOAD_INTERVAL` 后再次触发
 ⇒ **它的 age 恒定落在 `[0, 5h)` 区间内，且在周期内均匀分布**。
 链断了（2026-10-27 修之前的老 bug）→ 不再新建线程 → **没有任何 age < 5h 的非主线程**。
-所以健康的 proxy **必然**存在一个 age 落在 **4~5 小时**的线程（它在上次触发时出生）。
-链断了（2026-10-27 修之前的老 bug）→ 不再新建线程 → 那个 age 区间**空缺**。
 
 ```python
 # 读 /proc/<pid>/task/<tid>/stat 的第 22 个字段（starttime，单位 clock tick）
@@ -857,7 +855,6 @@ age = uptime - start_ticks / hz
 #   -> 下次重载 ...  (在 N 分钟后)
 #   -> 内存/磁盘同步: 是
 # exit 1 = 没有 age<5h 的非主线程 **且** 内存索引 ≠ 磁盘 -> 重载链真断了
-# exit 1 = 没找到 age 落在 5h 附近的线程 -> 重载链可能已断裂
 ```
 
 > 💡 **通则**：
@@ -906,12 +903,10 @@ e2e 客户端 timeout  >  proxy 的 HERMES_TIMEOUT（当前 1800s）
 ---
 
 ## 附：两个 KB 的基线速查（2026-11-06 更新）
-## 附：两个 KB 的基线速查（2026-11-01）
 
 | KB | 站点 | docs | index.json 字节 | locale 拆分 |
 |---|---|---|---|---|
 | `inexbot` | doc.inexbot.com | **559** | **1,728,927** | 仅 zh |
-| `inexbot` | doc.inexbot.com | **558** | **1,722,769** | 仅 zh |
 | `inexbot-open` | open.inexbot.com | **799** | **2,450,869** | zh=443 / en=178 / kr=178 |
 
 > ⚠️ `inexbot-open` 的 index 基线在 2026-10-29 从 **2,453,407 → 2,450,869**。
@@ -922,5 +917,3 @@ e2e 客户端 timeout  >  proxy 的 HERMES_TIMEOUT（当前 1800s）
 > （558 → **559**，上游新增「纳博特机器人自动标定系统NexAutoCail 性能测试使用手册_单靶球」）。
 > 这是**正常增长**（sha 前 16 位 `ae55935001f3fe10`），不是字节跳变。
 > 在此之前 `1,722,769 bytes`（sha `d565c39c433370c3`）自 2026-10-30 起逐字节持平了 17 次。
-> ⚠️ `inexbot` 的 index 基线 **1,722,769 bytes**（sha 前 16 位 `d565c39c433370c3`）
-> 自 2026-10-30 起逐字节持平 —— **558 篇已连续多日零新增**。
