@@ -1,8 +1,8 @@
 ---
 name: inexbot-open-knowledge-base
 description: "纳博特开放平台知识库 RAG：每天定时爬取 open.inexbot.com，由 hermes-skill-proxy 在请求时进行内存检索并注入 system prompt。"
-version: 1.23.0
-last_verified: 2026-11-08
+version: 1.24.0
+last_verified: 2026-11-09
 author: Hermes Agent
 license: MIT
 metadata:
@@ -705,7 +705,27 @@ hash-only 输出避免密钥明文与 Hermes 输出脱敏误判；`--units` 同�
 AST 指纹判据的原理、与 `check_proxy_env.py` 的分工、「mtime 太粗」的通用教训）
 见 `references/crawl-state-2026-11-06-assets.md`。
 
-**最新一轮爬取快照**见 `references/crawl-state-2026-11-08.md`
+**最新一轮爬取快照**见 `references/crawl-state-2026-11-09.md`
+（**799/560 连续第二十次持平（本 KB 纯稳态）**：index.json **2,450,869 bytes 与 10-29→11-08 逐字节相同**、
+verdict=IDENTICAL、零网络请求（0 次 `✓`、raw/ 最新仍是 10-23）、**3:13.8** 落在稳态带内、
+md/ 与 raw/ 今日均零重写、无 `.tmp` 残留；姊妹 KB 维持 **560**；
+**8 步标准序列全绿** —— crawl_state=IDENTICAL / index_hygiene（零宽 0、空标题 0、
+幻影 token 可达 0、旧 API 可达 0）/ retrieval_chain（**静默降级 ==800 = 0**，
+短正文 4 条 = 伺服报警占位页 61–71 B，属上游本来就短）/ proxy_health（open 799 + 姊妹 560）/ 
+**check_proxy_env --units（5 个变量三处 sha12 逐项一致，`HERMES_TIMEOUT` sha12=`e49ec846db75` = 1800 ✅）**/ 
+**check_proxy_staleness（线上 PID 1844673 源码 == HEAD `abb129c` → NOT stale，无需 restart）**/ 
+**check_reload_timer（重载链存活，下次重载 15:03:58）**/ 
+**e2e 探针 12/12 全 200**（46.3–176.9s，**0 次 502** → 连续第 5 天 502 计数为 0）；
+journal 按进程切片：`Unknown key` 0 / HTTP 500 0 / HTTP 502 0 / `RELOAD FAILED` 0 / HTTP 200 = 156；
+端口仅 8643+8642 无遗留压测进程；**姊妹 KB 的探针与本轮探针并发**（11-03 已证并发非 502 根因）
+→ 本轮仍 12/12 全 200；**proxy 未 restart 的两条理由** —— ① index 逐字节未变（无需为内容 restart）
+② 线上源码 AST 等价于 HEAD（无需为部署 restart）→ 顺带避免打断姊妹 KB 的探针（陷阱 1 / 陷阱 20）；
+**共享文件同步方向连续三轮反转**（11-07 merge → 11-08 cp → 11-09 cp），
+本轮姊妹 979 行/49,861 B（sha1 `fdc364656f99`）vs 本 skill 961 行/48,714 B（sha1 `08b8b138a901`），
+**姊妹独有 2 块、本 skill 独有 0** → 直接 `cp` 覆盖，同步后两份 sha1 归一为 `fdc364656f990254be31bfaae5c4bed71d1eccf1`；
+**本轮无新缺陷**，陷阱 14 未复发。）
+
+**上一轮快照**见 `references/crawl-state-2026-11-08.md`
 （**799/560 连续第十九次持平（本 KB 纯稳态）**：index.json **2,450,869 bytes 与 10-29→11-07 逐字节相同**、
 verdict=IDENTICAL、零网络请求（0 次 `✓`、raw/ 仍是 10-23）、**3:11.5** 落在稳态带内、
 md/ 与 raw/ 今日均零重写、无 `.tmp` 残留；姊妹 KB **+2 → 560**（真实增长，非本 skill 抽取变更）；
