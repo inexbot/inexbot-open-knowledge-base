@@ -1,7 +1,7 @@
 ---
 name: inexbot-open-knowledge-base
 description: "纳博特开放平台知识库 RAG：每天定时爬取 open.inexbot.com，由 hermes-skill-proxy 在请求时进行内存检索并注入 system prompt。"
-version: 1.24.0
+version: 1.25.0
 last_verified: 2026-11-09
 author: Hermes Agent
 license: MIT
@@ -1337,6 +1337,15 @@ python3 $SK/scripts/check_proxy_health.py
 > 线上跑的仍是旧代码（2026-11-05 现场：unit 11-04 就改对了，进程 10-31 起的，
 > **补丁滞留 4 天**，用户随机 502 整整 4 天没人发现）。
 >
+> 📌 **第 6b 步（可选，但**写任何「反查 md 文件」的审计脚本**时必跑）**：
+> 校验「proxy url → index key」的归一化写法没写错
+> ```bash
+> /usr/bin/python3 $SK/scripts/check_url_to_index_key.py
+> ```
+> 2026-11-09 新增。**归一化只应替换 `%26` / `%2B`**；写成整体 `unquote()` 会破坏
+> 中文那半边的 `%XX` → 实测 47 条里只有 1 条能查到 → **误报「md not found」**，
+> 差点被当成 KB 回归写进报告。详见上文「反向查表守卫」一节 + 共享 pitfalls §陷阱 24。
+>
 > 📌 **第 7 步（可选，但 proxy 的 .py 有改动时必跑）**：判定线上进程是否**行为上**陈旧
 > ```bash
 > python3 $SK/scripts/check_proxy_staleness.py
@@ -1446,6 +1455,46 @@ sudo -n journalctl -u hermes-skill-proxy.service --since "$TS" --no-pager | grep
 → **两个都要看**：全量历史判断有没有老问题，进程切片判断当前状态。
 
 > 📌 完整版见 `references/shared-proxy-service-pitfalls.md` §陷阱 11–12（姊妹 KB 权威版）。
+
+### ⚠️ 反查 md 文件时「URL → index key」的正确归一化 → 整体 `unquote()` 会破坏「混合编码态」（2026-11-09 实测，姊妹 KB 侧同样适用）
+
+**姊妹 KB `inexbot-knowledge-base` 2026-11-09 实测踩到，本 KB 同样适用** ——
+两个 KB 共用同一个 proxy，`index.json` 的 key 编码形态规则一致。
+
+**规则（`index.json` 的 key 是**混合编码态**）**：
+
+| 字符 | `index.json` 的 key | proxy 返回的 url | 需要的动作 |
+|---|---|---|---|
+| 中文 | **percent-encoded**（`%E6%8A%80…`） | 同左 | **不动** |
+| `&` | **字面 `&`** | **`%26`** | `%26` → `&` |
+| `+` | **字面 `+`** | **`%2B`** | `%2B` → `+` |
+
+⇒ **✅ 正确做法：只替换这两个字符**
+
+```python
+key = path.replace("%26", "&").replace("%2B", "+")
+```
+
+⇒ **❌ 不要整体 `unquote(path)`** —— 它是「整体解码」语义，会把中文那半边的 `%XX` 也解掉
+→ key 对不上 → **误报「md not found」**。
+
+**实测命中率（47 条 proxy 结果）**：
+
+| 策略 | 命中 |
+|---|---|
+| 只替换 `%26` / `%2B` | **47 / 47** ✅ |
+| 先精确匹配，miss 再 `unquote(path)` | 46 / 47 ❌（`+` 那条精确匹配也救不回来） |
+| 整体 `unquote(path)` | **1 / 47** ❌ |
+
+> ⚠️ **这是「审计脚本自己的查表 bug」，不是 KB 故障** —— 那次实测里被误报的那条
+> md 确实在磁盘上（17,916 字节），proxy 也正确读到了正文。
+> **假阳性指纹**：孤儿 md 数**不等于**条目数、且只有**个位数**条目报缺
+> （真·slug 契约断裂的特征是 **0/N + 孤儿=全量**）。
+>
+> 💡 **通则**：**规范化只做「已知差异的最小集合」**，不要用「更大的解码器」
+> 去覆盖混合编码态。先列出**两边到底哪几个字符的编码态不同**，再逐个替换。
+>
+> 📌 完整版见 `references/shared-proxy-service-pitfalls.md` §陷阱 24（姊妹 KB 权威来源）。
 
 ### ⚠️ 自己拼 md 文件名 → 漏掉 `.md` 后缀 → **假阳性**（2026-11-01 实测）
 
@@ -1583,6 +1632,54 @@ sha1sum ~/.hermes/skills/productivity/{inexbot,inexbot-open}-knowledge-base/refe
 
 **判读**：commit 报 `nothing to commit` → 先 `git log --oneline -3` 看是不是别人刚提交了 →
 确认内容无误后 `git push` 即可，不必重试 commit。
+
+> 📌 详见 `references/shared-proxy-service-pitfalls.md` §陷阱 4。
+
+### ⚠️ `git push` 会撞上 github.com:443 的**瞬时超时** → 后台重试即可（2026-11-09 实测）
+
+**症状**（2026-11-09 现场，连续 3 次失败）：
+
+```
+fatal: unable to access 'https://github.com/inexbot/...': Error in the HTTP2 framing layer
+fatal: unable to access 'https://github.com/inexbot/...': Failed to connect to github.com port 443 after 130088 ms: Connection timed out
+```
+
+**关键判读：这不是「没配好 git」，也不是「仓库权限问题」，而是瞬时网络故障。**
+两条硬证据：
+
+1. `api.github.com:443` **正常 200**（0.37s），`open.inexbot.com` **正常 200**（0.23s）
+   → 机器的出网能力没问题；
+2. 自写 socket 探针：`github.com:443` TCP **OK 0.1s**、TLS 握手 **OK 0.2s**（TLSv1.3）、
+   `github.com:22` / `ssh.github.com:443` / `codeload` / `objects.githubusercontent.com` **全部 OK**
+   → **github.com 本身完全可达**。
+
+⇒ **只有 git-over-HTTPS 这条路在那一刻失败**（可能是中间链路对该连接的 HTTP/2 复用处理异常）。
+**不要**因此去改 remote / 换 SSH / 怀疑凭证 —— 那些都是白工。
+
+**对策（三步，2026-11-09 实测第 4 次即成功）**：
+
+```bash
+# 1) 前台 push 会被 60s clamp 掐掉 -> 必须 background
+cd <repo> && GIT_HTTP_LOW_SPEED_LIMIT=1 GIT_HTTP_LOW_SPEED_TIME=999 \
+  timeout 200 git -c http.version=HTTP/1.1 push origin main > /tmp/push.log 2>&1
+# 2) 用 inline os.kill 循环等（绕开 process API 的 60s clamp）
+# 3) 失败就重试 —— 实测第 4 次返回 "Everything up-to-date"（期间姊妹已代推）
+```
+
+- `http.version=HTTP/1.1`：**规避 HTTP/2 framing layer 报错**（第 1 次失败就是它）；
+- `GIT_HTTP_LOW_SPEED_LIMIT=1 GIT_HTTP_LOW_SPEED_TIME=999`：**禁用「低速即断」超时**
+  —— 默认值会在长连接无数据时主动掐断，正好撞上 130s 的连接超时；
+- **重试是正解**：本轮第 4 次直接返回 `Everything up-to-date`，
+  因为**姊妹 KB 在这期间已经代推了**（良性竞态，陷阱 4）。
+
+> ⚠️ **push 失败 ≠ 工作没入库。** commit 已在本地（`git log` 可见），
+> 只是没推上 remote。**必须区分这两件事**，否则会误报「未提交」而重复劳动。
+> 收尾判据：`git rev-parse HEAD` 与 `git rev-parse origin/main` 是否一致。
+>
+> ⚠️ **push 成功后 HEAD 可能已经不是你的 commit** —— 姊妹 KB 可能在你 push 期间
+> 又提交了一次（2026-11-09 实测：我的 `6e6c1cf` 之后多了姊妹的 `3a55008`）。
+> **不要**因此判定自己的提交丢失，用
+> `git merge-base --is-ancestor <your-commit> origin/main` 确认它**在**历史里即可。
 
 > 📌 详见 `references/shared-proxy-service-pitfalls.md` §陷阱 4。
 

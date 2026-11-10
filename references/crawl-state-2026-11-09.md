@@ -79,6 +79,38 @@ C1102 控制器 通讯接口 有哪些 : 46.3 / 51.8 / 55.5 / 70.5      全 200
 ` M references/shared-proxy-service-pitfalls.md`（姊妹在同窗口先改了它，本轮按规则 cp 同步）。
 **没有 `??` 未跟踪文件，也没有 `M` 的代码/文档文件** → 无「报告写『遗留：无』但实际没提交」的复发。
 
+### ②' 新坑：`git push` 撞上 github.com:443 **瞬时超时**（连续 3 次失败，第 4 次成功）
+
+首次 push 报 `Error in the HTTP2 framing layer`，后两次报
+`Failed to connect to github.com port 443 after 130088 ms: Connection timed out`。
+
+**判读（关键：不是 git 配置问题）**：
+- `api.github.com:443` → **200**（0.37s）；`open.inexbot.com` → **200**（0.23s）；
+- 自写 socket 探针：`github.com:443` TCP **OK 0.1s**、TLS 握手 **OK 0.2s**（TLSv1.3）、
+  `github.com:22` / `ssh.github.com:443` / `codeload` / `objects.githubusercontent.com` **全部 OK**
+  → **github.com 本身完全可达**，只有 git-over-HTTPS 这条路在那一刻失败。
+
+**对策**（已写入 SKILL.md 新小节）：`terminal(background=true)` + inline `os.kill` 等待 +
+`git -c http.version=HTTP/1.1` + `GIT_HTTP_LOW_SPEED_LIMIT=1 GIT_HTTP_LOW_SPEED_TIME=999`
++ **重试**。本轮第 4 次返回 `Everything up-to-date` —— 因为**姊妹 KB 在这期间已代推**。
+
+> ⚠️ **push 失败 ≠ 工作没入库**（commit 已在本地 `git log` 里可见）。
+> 收尾判据：`git rev-parse HEAD` vs `git rev-parse origin/main`。
+> ⚠️ **push 成功后 HEAD 可能已不是自己的 commit** —— 姊妹在我 push 期间又提交了
+> （我的 `6e6c1cf` 之后多了姊妹的 `3a55008`）→ 用
+> `git merge-base --is-ancestor 6e6c1cf origin/main` 确认**在**历史里即可，**不是丢失**。
+
+### ②'' 姊妹在本轮**同步窗口内又改了共享文件** → 收尾前需重新 cp
+
+本轮首次同步时两份 sha1 归一为 `fdc364656f99`（陷阱 23 判定：姊妹独有 2 块、本 skill 独有 0 → cp）。
+但**姊妹随后又加了「陷阱 24：反向查表只做最小必要的归一化」**，并**直接写进了我们这份**
+（`git status` 出现 ` M references/shared-proxy-service-pitfalls.md`，+56 行）。
+最终两份 sha1 = `f0f3c22b698e5c05e1dda440369c15e0dda1f937` → 已一致。
+姊妹随后把它提交为 `3a55008` 并 push。
+
+⇒ **再次印证「共享文件的同步动作放在自己轮次的最后一步」** ——
+中途同步只是当时的快照，姊妹会继续长。
+
 ### ③ 姊妹 KB 的探针与本轮探针**并发**（但结果仍全绿）
 
 本轮 e2e 探针运行期间，`ps` 看到姊妹 KB 的 `check_e2e_request.py --runs 4` 已在跑
@@ -110,7 +142,22 @@ C1102 控制器 通讯接口 有哪些 : 46.3 / 51.8 / 55.5 / 70.5      全 200
 git add SKILL.md references/crawl-state-2026-11-09.md
 git add references/shared-proxy-service-pitfalls.md references/.index-snapshot.json
 git commit -m "docs: add 2026-11-09 crawl state (799/560 20th flat), sync shared pitfalls from sister"
-git push
+# -> 6e6c1cf
+git push origin main          # 撞上 github.com:443 瞬时超时，重试后成功
+```
+
+**push 过程**：前 3 次失败（第 1 次 HTTP/2 framing layer，后 2 次 130s 连接超时），
+第 4 次返回 `Everything up-to-date` —— 姊妹 KB 在这期间已代推（`3a55008`）。
+`git merge-base --is-ancestor 6e6c1cf origin/main` → **YES**，本轮 commit 确实在远端历史里。
+
+姊妹随后在本轮 commit 之上追加了 `3a55008`（陷阱 24 的共享文件同步）→ 良性竞态（陷阱 4）。
+
+**收尾时另提交**（SKILL.md 新增「`git push` 瞬时超时」小节 + 本快照的 ②'/②'' 补充）：
+
+```
+git add SKILL.md references/crawl-state-2026-11-09.md
+git commit -m "docs: record git push transient timeout pitfall (2026-11-09)"
+git push origin main
 ```
 
 commit message 用**纯 ASCII**（陷阱 5：含中文会被 tirith `confusable_text` 拦下）。
