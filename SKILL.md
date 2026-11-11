@@ -1,8 +1,8 @@
 ---
 name: inexbot-open-knowledge-base
 description: "纳博特开放平台知识库 RAG：每天定时爬取 open.inexbot.com，由 hermes-skill-proxy 在请求时进行内存检索并注入 system prompt。"
-version: 1.25.0
-last_verified: 2026-11-09
+version: 1.26.0
+last_verified: 2026-11-10
 author: Hermes Agent
 license: MIT
 metadata:
@@ -377,9 +377,9 @@ python3 ~/.hermes/skills/productivity/inexbot-open-knowledge-base/scripts/check_
 输出形如：
 
 ```
-index.json: 799 entries, 2,448,900 bytes, mtime 2026-10-21 11:04:24
+index.json: 799 entries, 2,450,869 bytes, mtime 2026-11-10 11:04:56
 locale distribution: en=178, kr=178, zh=443
-md/ files: 1854 total (1676 locale-prefixed, 178 stale bare)
+md/ files: 1855 total (1677 locale-prefixed, 178 stale bare)
 verdict: IDENTICAL to previous crawl (content byte-for-byte unchanged)
 ```
 
@@ -500,7 +500,7 @@ systemd-analyze verify /tmp/probe-fixed.service 2>&1 | grep probe-fixed
 curl http://localhost:8643/health
 ```
 
-正常返回（inexbot-open 当前应约为 **799** 篇：自 2026-08-25 起连续 7 次稳态 721 后，2026-09-29 zh sidebar +74 涨到 795，2026-10-01 再 +2 涨到 797，2026-10-10 再 +2 涨到 799，2026-10-18/19/21/22/23/25/26/27/28/29/**30**/31/11-01/**11-02**/**11-08** **连续 19 次持平（docs 数自 10-10 起 29 天零新增）**；en/kr 长期稳态 178；`inexbot` 约 **560** 篇；2026-11-08 现场验证）：
+正常返回（inexbot-open 当前应约为 **799** 篇：自 2026-08-25 起连续 7 次稳态 721 后，2026-09-29 zh sidebar +74 涨到 795，2026-10-01 再 +2 涨到 797，2026-10-10 再 +2 涨到 799，2026-10-18/19/21/22/23/25/26/27/28/29/**30**/31/11-01/**11-02**/11-08/11-09/**11-10** **连续 21 次持平（docs 数自 10-10 起 31 天零新增）**；en/kr 长期稳态 178；`inexbot` 约 **560** 篇；2026-11-10 现场验证）：
 ```json
 {"status":"ok","indexes":{"inexbot":{"docs":560,"loaded":true},"inexbot-open":{"docs":799,"loaded":true}}}
 ```
@@ -705,7 +705,29 @@ hash-only 输出避免密钥明文与 Hermes 输出脱敏误判；`--units` 同�
 AST 指纹判据的原理、与 `check_proxy_env.py` 的分工、「mtime 太粗」的通用教训）
 见 `references/crawl-state-2026-11-06-assets.md`。
 
-**最新一轮爬取快照**见 `references/crawl-state-2026-11-09.md`
+**最新一轮爬取快照**见 `references/crawl-state-2026-11-10.md`
+（**799/560 连续第二十一次持平（本 KB 纯稳态）**：index.json **2,450,869 bytes 与 10-29→11-09 逐字节相同**、
+verdict=IDENTICAL、零网络请求（0 次 `✓`、raw/ 最新仍是 10-23）、**3:51.3** 落在稳态带内、
+md/ 与 raw/ 今日均零重写、无 `.tmp` 残留；姊妹 KB 维持 **560**；
+**8 步标准序列全绿** —— crawl_state=IDENTICAL / index_hygiene（零宽 0、空标题 0、
+幻影 token 可达 0、旧 API 可达 0）/ retrieval_chain（**静默降级 ==800 = 0**，
+短正文 4 条 = 伺服报警占位页 61–71 B，属上游本来就短）/ proxy_health（open 799 + 姊妹 560）/ 
+**check_proxy_env --units（5 个变量三处 sha12 逐项一致，`HERMES_TIMEOUT` sha12=`e49ec846db75` = 1800 ✅）**/ 
+**check_proxy_staleness（线上 PID 1844673 源码 == HEAD → NOT stale，无需 restart）**/ 
+**check_reload_timer（重载链存活，下次重载 11:04:09）**/ 
+**e2e 探针 12/12 全 200**（见下，**0 次 502** → 连续第 6 天 502 计数为 0）；
+journal 按进程切片：`Unknown key` 0 / HTTP 500 0 / HTTP 502 0 / `RELOAD FAILED` 0 / HTTP 200 = 168；
+端口仅 8643+8642 无遗留压测进程；
+**🔴 本轮新坑：github.com:443 持续不通（socket 探针 0/5，SSH :22 5/5）→ HTTPS push 连失 3 次，
+改走 `git push git@github.com:owner/repo.git main:main` 一次成功**（不改动 remote 配置）；
+**陷阱 14 第 5 次复发**：11-09 遗留的 `M SKILL.md` + `M crawl-state-2026-11-09.md`
++ `?? check_url_to_index_key.py`（SKILL.md 直接引用的文件）本轮已闭合入库；
+**md/ 1854→1855 的真实来源是 10-29 离线重建**（今日零重写；11-08/11-09 快照的「1854」是抄错旧值）；
+**md/ 孤儿 1056 个全部是 10-29 之前的死缓存**（index 可达 799/799、缺失 0 → 架构上不可达）；
+**共享文件同步方向第 4 次反转**（本轮 IDENTICAL，含姊妹新加的陷阱 25）；
+**proxy 未 restart**（index 逐字节未变 + 线上源码 AST 等价于 HEAD）→ 顺带避开了打断姊妹 KB 探针
+（她的探针本轮从 11:00 持续到约 11:29）；
+**上一轮快照**见 `references/crawl-state-2026-11-09.md`
 （**799/560 连续第二十次持平（本 KB 纯稳态）**：index.json **2,450,869 bytes 与 10-29→11-08 逐字节相同**、
 verdict=IDENTICAL、零网络请求（0 次 `✓`、raw/ 最新仍是 10-23）、**3:13.8** 落在稳态带内、
 md/ 与 raw/ 今日均零重写、无 `.tmp` 残留；姊妹 KB 维持 **560**；
@@ -1623,6 +1645,12 @@ sha1sum ~/.hermes/skills/productivity/{inexbot,inexbot-open}-knowledge-base/refe
 >
 > 📌 跨 KB 版本的「同步方向会反转」+「`hsp._index_data` 而非 `INDEXES`」
 > 见 `references/shared-proxy-service-pitfalls.md` §陷阱 15–16。
+>
+> ⭐ **2026-11-11 新增两条共享陷阱**（姊妹 KB 那轮补做，已同步到本 skill）：
+> - **§陷阱 26**：筛选/检测谓词作用在**已编码的字符串**上 → 恒为空集 → 脚本**静默降级测错东西**。
+>   （CJK 检测必须先 `unquote()`；**兜底分支是在「藏错」，不是「稳健」。**）
+> - **§陷阱 27**：共享文件**同步之后还会再分叉** → **sync 必须放在所有编辑之后**，
+>   **sha1 核对放最后一步**（不是 cp 之后立刻核对）。
 
 ### ⚠️ 姊妹 KB 与本 skill 会并发 commit 同一个 proxy repo（2026-10-30）
 
@@ -1635,42 +1663,66 @@ sha1sum ~/.hermes/skills/productivity/{inexbot,inexbot-open}-knowledge-base/refe
 
 > 📌 详见 `references/shared-proxy-service-pitfalls.md` §陷阱 4。
 
-### ⚠️ `git push` 会撞上 github.com:443 的**瞬时超时** → 后台重试即可（2026-11-09 实测）
+### ⚠️ `git push` 撞上 github.com:443 超时 → **先探针定性，再选传输通道**（2026-11-09 首遇 / 2026-11-10 升级为持续故障）
 
-**症状**（2026-11-09 现场，连续 3 次失败）：
+**症状**：
 
 ```
 fatal: unable to access 'https://github.com/inexbot/...': Error in the HTTP2 framing layer
 fatal: unable to access 'https://github.com/inexbot/...': Failed to connect to github.com port 443 after 130088 ms: Connection timed out
 ```
 
-**关键判读：这不是「没配好 git」，也不是「仓库权限问题」，而是瞬时网络故障。**
-两条硬证据：
+> ⚠️ **2026-11-10 实测：11-09 记录的「瞬时抖动」可能升级为「持续不通」——
+> 重试 3 次全部失败，必须先定性再决定对策，不要无限重试。**
 
-1. `api.github.com:443` **正常 200**（0.37s），`open.inexbot.com` **正常 200**（0.23s）
-   → 机器的出网能力没问题；
-2. 自写 socket 探针：`github.com:443` TCP **OK 0.1s**、TLS 握手 **OK 0.2s**（TLSv1.3）、
-   `github.com:22` / `ssh.github.com:443` / `codeload` / `objects.githubusercontent.com` **全部 OK**
-   → **github.com 本身完全可达**。
+**第一步：跑 socket 探针定性（30 秒内出结论）**
 
-⇒ **只有 git-over-HTTPS 这条路在那一刻失败**（可能是中间链路对该连接的 HTTP/2 复用处理异常）。
-**不要**因此去改 remote / 换 SSH / 怀疑凭证 —— 那些都是白工。
+| 探针 | 11-09（瞬时） | 11-10（持续） | 判读 |
+|---|---|---|---|
+| `curl -m 30 https://api.github.com/` | 200 / 0.37s | **200 / 0.37s** | 出网正常 |
+| `curl -m 30 https://open.inexbot.com/` | 200 | **200 / 0.83s** | 出网正常 |
+| socket TCP+TLS `github.com:443` × 5 | **OK 0.1s / 0.2s** | **0/5 OK（每次 8s 超时）** | 🔴 **该端口不通** |
+| socket TCP `github.com:22` × 5 | OK | **5/5 OK（0.09s）** | 🟢 **SSH 通道正常** |
+| `ssh -T git@github.com` | — | **成功认证**（`Hi <user>!`） | 🟢 SSH 凭证有效 |
 
-**对策（三步，2026-11-09 实测第 4 次即成功）**：
+⇒ **故障面精确到「github.com 这一台机器的 443 端口」** ——
+不是整个 GitHub、不是 DNS、不是本机 git 配置
+（`git config --global --list` 无 proxy / 无 `url.*` 覆盖；env 无 `*_proxy`）。
+
+**第二步：按定性选对策**
 
 ```bash
-# 1) 前台 push 会被 60s clamp 掐掉 -> 必须 background
+# 情形 A：443 探针偶尔能通（瞬时抖动）-> 后台重试
 cd <repo> && GIT_HTTP_LOW_SPEED_LIMIT=1 GIT_HTTP_LOW_SPEED_TIME=999 \
   timeout 200 git -c http.version=HTTP/1.1 push origin main > /tmp/push.log 2>&1
-# 2) 用 inline os.kill 循环等（绕开 process API 的 60s clamp）
-# 3) 失败就重试 —— 实测第 4 次返回 "Everything up-to-date"（期间姊妹已代推）
+
+# 情形 B：443 探针 0/5 不通（持续故障）-> **改走 SSH 传输通道**
+cd <repo> && timeout 120 git push git@github.com:owner/repo.git main:main
 ```
 
-- `http.version=HTTP/1.1`：**规避 HTTP/2 framing layer 报错**（第 1 次失败就是它）；
-- `GIT_HTTP_LOW_SPEED_LIMIT=1 GIT_HTTP_LOW_SPEED_TIME=999`：**禁用「低速即断」超时**
+- `http.version=HTTP/1.1`：规避 HTTP/2 framing layer 报错；
+- `GIT_HTTP_LOW_SPEED_LIMIT=1 GIT_HTTP_LOW_SPEED_TIME=999`：禁用「低速即断」超时
   —— 默认值会在长连接无数据时主动掐断，正好撞上 130s 的连接超时；
-- **重试是正解**：本轮第 4 次直接返回 `Everything up-to-date`，
-  因为**姊妹 KB 在这期间已经代推了**（良性竞态，陷阱 4）。
+- **SSH 通道（情形 B）**：2026-11-10 实测**一次成功**，且**不改动 remote 配置**。
+
+> ⚠️ **不要用 `git remote set-url` 换成 SSH** —— 那是**全局副作用**，
+> 两个 KB 的 cron 共用同一份仓库配置，改了会影响对方。
+> **用 `git push <url> <refspec>` 的一次性语法**即可。
+
+**第三步：验证「到底入库没有」—— 不要只看 push 的返回值**
+
+```bash
+git fetch git@github.com:owner/repo.git main:refs/remotes/sshcheck/main
+git merge-base --is-ancestor <your-commit> refs/remotes/sshcheck/main && echo "IN remote"
+```
+
+> ⚠️ **「push 返回 `Everything up-to-date`」≠「我们的工作不在 remote」**。
+> 2026-11-10 实测：SSH push 返回 `Everything up-to-date`，
+> 但 `git log refs/remotes/sshcheck/main` 显示 remote HEAD 已前进到姊妹的新 commit，
+> 我们的 commit **确实在历史里**（`merge-base --is-ancestor` = YES）——
+> 是**姊妹在我们之前已代推**（良性竞态，陷阱 4）。
+> ⇒ **必须用 `merge-base --is-ancestor` 判定自己的 commit 在不在历史里**，
+> 不要因为「Everything up-to-date」就误判为「没推上去」而重复劳动。
 
 > ⚠️ **push 失败 ≠ 工作没入库。** commit 已在本地（`git log` 可见），
 > 只是没推上 remote。**必须区分这两件事**，否则会误报「未提交」而重复劳动。
