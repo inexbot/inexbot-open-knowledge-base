@@ -1,8 +1,8 @@
 ---
 name: inexbot-open-knowledge-base
 description: "纳博特开放平台知识库 RAG：每天定时爬取 open.inexbot.com，由 hermes-skill-proxy 在请求时进行内存检索并注入 system prompt。"
-version: 1.27.0
-last_verified: 2026-11-11
+version: 1.28.0
+last_verified: 2026-11-12
 author: Hermes Agent
 license: MIT
 metadata:
@@ -705,7 +705,39 @@ hash-only 输出避免密钥明文与 Hermes 输出脱敏误判；`--units` 同�
 AST 指纹判据的原理、与 `check_proxy_env.py` 的分工、「mtime 太粗」的通用教训）
 见 `references/crawl-state-2026-11-06-assets.md`。
 
-**最新一轮爬取快照**见 `references/crawl-state-2026-11-10.md`
+**最新一轮爬取快照**见 `references/crawl-state-2026-11-12.md`
+（**799/560 连续第二十三次持平（本 KB 纯稳态）**：index.json **2,450,869 bytes 与 10-29→11-11 逐字节相同**、
+verdict=IDENTICAL、零网络请求（0 次 `✓`、raw/ 最新仍是 10-23）、**3:41.4** 落在稳态带内、
+md/ 与 raw/ 今日均零重写、无 `.tmp` 残留；姊妹 KB 维持 **560**；
+**8 步标准序列全绿** —— crawl_state=IDENTICAL / index_hygiene（零宽 0、空标题 0、
+幻影 token 可达 0、旧 API 可达 0）/ retrieval_chain（**静默降级 ==800 = 0**，
+短正文 4 条 = 伺服报警占位页 61–71 B，属上游本来就短）/ proxy_health（open 799 + 姊妹 560）/ 
+**check_proxy_env --units（5 个变量三处 sha12 逐项一致，`HERMES_TIMEOUT` sha12=`e49ec846db75` = 1800 ✅）**/ 
+**check_proxy_staleness（线上 PID 1844673 源码 == HEAD → NOT stale，无需 restart）**/ 
+**check_reload_timer（重载链存活，下次重载 13:04:36）**/ 
+**e2e 探针 12/12 全 200**（**0 次 502** → 连续第 8 天 502 计数为 0）；
+journal 按进程切片（2173 行）：`Unknown key` 0 / HTTP 500 0 / HTTP 502 0 / `RELOAD FAILED` 0 /
+`Traceback` 0 / HTTP 200 = 229；
+端口仅 8643+8642 无遗留压测进程；
+**🔴 github.com:443 故障复发，且「socket 探针会假绿」**——11:04 探针 443 **3/3 OK**，
+真实 `git push` 却 `Failed to connect to github.com port 443 after 129573 ms`；
+失败后复探才见 443 **0/3**（22 通道 3/3 OK + `ssh -T` 认证成功）
+⇒ **判据要改成「push 失败后立即复探，失败即切 SSH」**，不是「探针通过就一定走 HTTPS」；
+改走 `git push git@github.com:owner/repo.git main:main` 一次成功（不改动 remote 配置）；
+**副作用**：HTTPS fetch 失败 → `origin/main` 跟踪 ref 陈旧 → `git status -sb` 误报 `[ahead 1]`
+→ 需 `git update-ref refs/remotes/origin/main <sha>` 手工对齐，否则下轮 cron 会重复劳动；
+**陷阱 14 第 7 次复发**：11-11 那轮被 **HTTP 429 打断**（`Last run: ... error: RuntimeError: HTTP 429`），
+其报告正文写「已核验干净」但**实际 4 个文件 / 168 行没入库** → 本轮已闭合（`62bb1a4`）；
+⇒ **再次确认姊妹 KB 11-11 的结论：「带 `error:` 的上一轮，报告正文里的提交结论一律作废」**；
+**共享文件同步**：姊妹新增**陷阱 28/29**（本 skill 独有行 = 0 → `cp` 覆盖），
+同步后两份 sha1 归一为 `10719f9eb8cb`，复跑 `diff_shared_pitfalls.py` → exit 0；
+**陷阱 28 实测复用成功** —— 探针第 0 步就后台起跑，其余 7 步并行做完，
+本轮探针**跑满 12/12**，未重演姊妹 11-11 的「10/12 悬案」；
+**与姊妹探针同窗口并发**（11:00 起双方探针同时在飞）→ 两边均 12/12 全 200、**0 次 502**
+→ 再次印证 11-03 的结论「并发争抢不是 502 根因」；
+**proxy 未 restart**（index 逐字节未变 + 线上源码 AST 等价于 HEAD）→ 未打断姊妹探针；
+**小坑**：`ps -o lstart=` 要**单独取**（`ps -eo pid,lstart,cmd` 再切会把 cmd 混进日期串 → `date` 报 invalid date）；
+**上一轮快照**见 `references/crawl-state-2026-11-10.md`
 （**799/560 连续第二十一次持平（本 KB 纯稳态）**：index.json **2,450,869 bytes 与 10-29→11-09 逐字节相同**、
 verdict=IDENTICAL、零网络请求（0 次 `✓`、raw/ 最新仍是 10-23）、**3:51.3** 落在稳态带内、
 md/ 与 raw/ 今日均零重写、无 `.tmp` 残留；姊妹 KB 维持 **560**；
@@ -1510,6 +1542,36 @@ git log --oneline -3
 >
 > 📌 完整分析见 `references/cron-completion-discipline.md`。
 
+#### 🔴 **上一轮带 `error:` 时，报告正文里的「已提交」结论一律作废**（2026-11-12 实测）
+
+`hermes cron list` 的 `Last run` 字段长这样：
+
+```
+Last run:  2026-11-11T11:45:45.618856+08:00  error: RuntimeError: HTTP 429: ...
+```
+
+⇒ **这一轮是被中断的**（429 / 超时 / 工具上限），
+而它**报告正文**里若写着「### 提交与推送（已核验干净）」「✅ `ce44687..36e50f7`」——
+**那些结论不可信**：报告正文写完即被打断，**commit/push 根本没来得及执行**。
+
+**2026-11-11 姊妹 KB 侧实测**：那轮报告第 5 节写「已核验干净」，
+本轮实测 `git status -sb` 却有 **4 个文件 / 168 行**没进版本库。
+**本 KB 侧同样中招**：11-11 那轮被 429 打断，本轮开跑时 `git status` 见
+`M SKILL.md` + `M references/.index-snapshot.json` + `M references/shared-proxy-service-pitfalls.md`
++ `?? references/crawl-state-2026-11-11.md` —— **同样没入库**。
+
+⇒ **轮次第 0 步的硬动作**：
+
+```bash
+hermes cron list 2>&1 | grep -A 80 "Last run" | head -120
+# 若上一轮含 "error:" → 该轮报告正文里的提交结论一律作废
+# 必须独立跑 git status -sb 核对，而不是相信它的报告
+```
+
+**⇒ 根因是「顺序」不是「遗忘」**：把 commit+push 放在「写报告正文」之后，
+一旦在写报告阶段被打断，工作就全部悬空。
+**⇒ 正确顺序：改 → commit → push → 写报告**（报告是最后一步的产物，不是中间步骤）。
+
 ### ⚠️ 姊妹 KB 的 cron 会在同窗口 restart proxy → 你的探针可能拿到 `RemoteDisconnected`（2026-10-30）
 
 **现象**：本轮 11:15:35 我 restart proxy → PID 1779750；**11:16:37 姊妹 KB 的 cron 又 restart 了一次**
@@ -1731,7 +1793,7 @@ sha1sum ~/.hermes/skills/productivity/{inexbot,inexbot-open}-knowledge-base/refe
 
 > 📌 详见 `references/shared-proxy-service-pitfalls.md` §陷阱 4。
 
-### ⚠️ `git push` 撞上 github.com:443 超时 → **先探针定性，再选传输通道**（2026-11-09 首遇 / 2026-11-10 升级为持续故障）
+### ⚠️ `git push` 撞上 github.com:443 超时 → **先探针定性，再选传输通道**（2026-11-09 首遇 / 2026-11-10 升级为持续故障 / **2026-11-12 复发 + 探针假绿**）
 
 **症状**：
 
@@ -1743,15 +1805,27 @@ fatal: unable to access 'https://github.com/inexbot/...': Failed to connect to g
 > ⚠️ **2026-11-10 实测：11-09 记录的「瞬时抖动」可能升级为「持续不通」——
 > 重试 3 次全部失败，必须先定性再决定对策，不要无限重试。**
 
+> 🔴 **2026-11-12 实测（新坑）：socket 探针会「假绿」——探针通过 ≠ 真实传输可用。**
+>
+> | 时刻 | 443 socket 探针 | 真实 `git push` |
+> |---|---|---|
+> | 11:04（push 前探针） | **3/3 OK**（0.23s） | ❌ **失败**：`Failed to connect to github.com port 443 after 129573 ms` |
+> | 11:13（push 失败后复探） | **0/3 OK**（全 TimeoutError） | ❌ HTTPS 不可用 |
+> | 11:13（同一时刻） | 22 **3/3 OK** + `ssh -T` 认证成功 | ✅ SSH 通道可用 |
+>
+> ⇒ **443 的可达性是波动的**：短时间内探针可以全通，而真正的 git 传输仍然超时。
+> ⇒ **判据必须改成「push 失败后立即复探；失败即切 SSH」**，
+> **不能**因为「探针 3/3 通过」就认定 HTTPS 可用并停在重试循环里。
+
 **第一步：跑 socket 探针定性（30 秒内出结论）**
 
-| 探针 | 11-09（瞬时） | 11-10（持续） | 判读 |
-|---|---|---|---|
-| `curl -m 30 https://api.github.com/` | 200 / 0.37s | **200 / 0.37s** | 出网正常 |
-| `curl -m 30 https://open.inexbot.com/` | 200 | **200 / 0.83s** | 出网正常 |
-| socket TCP+TLS `github.com:443` × 5 | **OK 0.1s / 0.2s** | **0/5 OK（每次 8s 超时）** | 🔴 **该端口不通** |
-| socket TCP `github.com:22` × 5 | OK | **5/5 OK（0.09s）** | 🟢 **SSH 通道正常** |
-| `ssh -T git@github.com` | — | **成功认证**（`Hi <user>!`） | 🟢 SSH 凭证有效 |
+| 探针 | 11-09（瞬时） | 11-10（持续） | **11-12（复发）** | 判读 |
+|---|---|---|---|---|
+| `curl -m 30 https://api.github.com/` | 200 / 0.37s | **200 / 0.37s** | — | 出网正常 |
+| `curl -m 30 https://open.inexbot.com/` | 200 | **200 / 0.83s** | — | 出网正常 |
+| socket TCP+TLS `github.com:443` × 5 | **OK 0.1s / 0.2s** | **0/5 OK（每次 8s 超时）** | **先 3/3 OK → 后 0/3（波动！）** | 🔴 **该端口不稳/不通** |
+| socket TCP `github.com:22` × 5 | OK | **5/5 OK（0.09s）** | **3/3 OK（0.09s）** | 🟢 **SSH 通道正常** |
+| `ssh -T git@github.com` | — | **成功认证**（`Hi <user>!`） | **成功认证** | 🟢 SSH 凭证有效 |
 
 ⇒ **故障面精确到「github.com 这一台机器的 443 端口」** ——
 不是整个 GitHub、不是 DNS、不是本机 git 配置
@@ -1767,6 +1841,10 @@ cd <repo> && GIT_HTTP_LOW_SPEED_LIMIT=1 GIT_HTTP_LOW_SPEED_TIME=999 \
 # 情形 B：443 探针 0/5 不通（持续故障）-> **改走 SSH 传输通道**
 cd <repo> && timeout 120 git push git@github.com:owner/repo.git main:main
 ```
+
+> 💡 **2026-11-12 实操建议**：HTTPS push **超时上限设短**（`timeout 200`），
+> 失败后**不要**再跑一轮长超时重试 → 直接复探 443 → 不通就切 SSH。
+> 11-12 这轮把 HTTPS 浪费了 130 秒，切 SSH 后**一次成功**。
 
 - `http.version=HTTP/1.1`：规避 HTTP/2 framing layer 报错；
 - `GIT_HTTP_LOW_SPEED_LIMIT=1 GIT_HTTP_LOW_SPEED_TIME=999`：禁用「低速即断」超时
