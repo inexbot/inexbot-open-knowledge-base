@@ -1,8 +1,8 @@
 ---
 name: inexbot-open-knowledge-base
 description: "纳博特开放平台知识库 RAG：每天定时爬取 open.inexbot.com，由 hermes-skill-proxy 在请求时进行内存检索并注入 system prompt。"
-version: 1.28.0
-last_verified: 2026-11-12
+version: 1.29.0
+last_verified: 2026-11-13
 author: Hermes Agent
 license: MIT
 metadata:
