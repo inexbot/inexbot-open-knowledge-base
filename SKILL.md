@@ -705,7 +705,31 @@ hash-only 输出避免密钥明文与 Hermes 输出脱敏误判；`--units` 同�
 AST 指纹判据的原理、与 `check_proxy_env.py` 的分工、「mtime 太粗」的通用教训）
 见 `references/crawl-state-2026-11-06-assets.md`。
 
-**最新一轮爬取快照**见 `references/crawl-state-2026-11-12.md`
+**最新一轮爬取快照**见 `references/crawl-state-2026-11-13.md`
+（**799/560 连续第二十四次持平（本 KB 纯稳态）**：index.json **2,450,869 bytes 与 10-29→11-12 逐字节相同**、
+verdict=IDENTICAL、零网络请求（0 次 `✓`、raw/ 最新仍是 10-23）、**3:26.7** 落在稳态带内、
+md/ 与 raw/ 今日均零重写、无 `.tmp` 残留；姊妹 KB 维持 **560**；
+**8 步标准序列全绿** —— crawl_state=IDENTICAL / index_hygiene（零宽 0、空标题 0、
+幻影 token 可达 0、旧 API 可达 0）/ retrieval_chain（**静默降级 ==800 = 0**，
+短正文 4 条 = 伺服报警占位页 61–71 B，属上游本来就短）/ proxy_health（open 799 + 姊妹 560）/ 
+**check_proxy_env --units（5 个变量三处 sha12 逐项一致，`HERMES_TIMEOUT` sha12=`e49ec846db75` = 1800 ✅）**/ 
+**check_proxy_staleness（线上 PID 1844673 源码 == HEAD → NOT stale，无需 restart）**/ 
+**check_reload_timer（重载链存活，下次重载 14:04:49）**/ 
+**e2e 探针 12/12 全 200**（**0 次 502** → 连续第 9 天 502 计数为 0）；
+journal 按进程切片：`Unknown key` 0 / HTTP 500 0 / HTTP 502 0 / `RELOAD FAILED` 0；
+端口仅 8643+8642 无遗留压测进程；
+**本轮闭合了 11-12 遗留的 4 处未提交工作**（陷阱 14 第 8 次复发）—— 11-12 的
+`M SKILL.md` / `M shared-proxy-service-pitfalls.md` / `?? git-push-channel-failures.md` /
+`?? check_git_channel.py` 当时未入库 → 若被 `git pull` 静默回退，**陷阱 30 的守卫生效条件会消失**；
+**本轮还修掉了 11-12 遗留的一个「半截行」编辑事故**——SKILL.md 第 708 行被删掉了
+`（**799/560 连续第二十三次持平…` 的前半截，只留下 `verdict=IDENTICAL…` → 括号不闭合、
+句子读起来断裂 → 本轮用 11-13 的完整块替换；
+**共享文件同步**：姊妹新增**陷阱 30**（本 skill 独有行 = 0 → `cp` 覆盖），
+同步后两份 sha1 归一为 `8cb3d16624a6573b6157547708080bfe961d0766`，复跑 `diff_shared_pitfalls.py` → exit 0；
+**姊妹 KB 本轮与本 skill 同窗口并发**（姊妹 11:01:xx 起爬 + 起 e2e 探针）→ 两边均 12/12 全 200、
+**0 次 502** → 再次印证 11-03 的结论「并发争抢不是 502 根因」；
+**proxy 未 restart**（index 逐字节未变 + 线上源码 AST 等价于 HEAD）→ 未打断姊妹探针；
+**上一轮快照**见 `references/crawl-state-2026-11-12.md`
 （**799/560 连续第二十三次持平（本 KB 纯稳态）**：index.json **2,450,869 bytes 与 10-29→11-11 逐字节相同**、
 verdict=IDENTICAL、零网络请求（0 次 `✓`、raw/ 最新仍是 10-23）、**3:41.4** 落在稳态带内、
 md/ 与 raw/ 今日均零重写、无 `.tmp` 残留；姊妹 KB 维持 **560**；
