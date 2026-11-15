@@ -1,8 +1,8 @@
 ---
 name: inexbot-open-knowledge-base
 description: "纳博特开放平台知识库 RAG：每天定时爬取 open.inexbot.com，由 hermes-skill-proxy 在请求时进行内存检索并注入 system prompt。"
-version: 1.29.0
-last_verified: 2026-11-13
+version: 1.30.0
+last_verified: 2026-11-15
 author: Hermes Agent
 license: MIT
 metadata:
@@ -500,9 +500,9 @@ systemd-analyze verify /tmp/probe-fixed.service 2>&1 | grep probe-fixed
 curl http://localhost:8643/health
 ```
 
-正常返回（inexbot-open 当前应约为 **799** 篇：自 2026-08-25 起连续 7 次稳态 721 后，2026-09-29 zh sidebar +74 涨到 795，2026-10-01 再 +2 涨到 797，2026-10-10 再 +2 涨到 799，2026-10-18/19/21/22/23/25/26/27/28/29/**30**/31/11-01/**11-02**/11-08/11-09/**11-10** **连续 21 次持平（docs 数自 10-10 起 31 天零新增）**；en/kr 长期稳态 178；`inexbot` 约 **560** 篇；2026-11-10 现场验证）：
+正常返回（inexbot-open 当前应约为 **817** 篇：自 2026-08-25 起连续 7 次稳态 721 后，2026-09-29 zh sidebar +74 涨到 795，2026-10-01 再 +2 涨到 797，2026-10-10 再 +2 涨到 799，2026-10-18→11-13 连续 24 次持平（docs 数自 10-10 起 34 天零新增），**2026-11-14 zh +18 涨到 817**（Python SDK 接口 13 + C++ 示例 2 + 控制器文档 2 + EtherCAT 排障 1 —— `raw/` 有 18 个文件在 11-14 11:03:33 被真正抓取，**是真实上游增长**），2026-11-15 持平；en/kr 长期稳态 178；`inexbot` 约 **560** 篇；2026-11-15 现场验证）：
 ```json
-{"status":"ok","indexes":{"inexbot":{"docs":560,"loaded":true},"inexbot-open":{"docs":799,"loaded":true}}}
+{"status":"ok","indexes":{"inexbot":{"docs":560,"loaded":true},"inexbot-open":{"docs":817,"loaded":true}}}
 ```
 
 > 历史基线快照：534（2026-07-18）→ 552（2026-07-26）→ 636（2026-07-31）→ 715（2026-08-21）→ **721（2026-08-25 起连续 7 次稳态，截至 2026-09-21）** → **795（2026-09-29，+74 zh sidebar 新增，打破稳态）** → **797（2026-10-01，+2 zh sidebar 持续增长）** → **799（2026-10-10，再 +2 zh sidebar 持续增长）** → **799（2026-10-18，首次持平）** → **799（2026-10-19，连续第二次持平）** → **799（2026-10-21，连续第三次持平，字节级对比首次可用，verdict=IDENTICAL）** → **799（2026-10-22，连续第四次持平，2,448,900 bytes 与 10-19 逐字节相同；姊妹 KB inexbot 反而 +1 到 558）**。每次良性增长都直接 patch 进 `check_proxy_health.py` 的 `BASELINES`。
@@ -709,12 +709,49 @@ hash-only 输出避免密钥明文与 Hermes 输出脱敏误判；`--units` 同�
 **抓不到**这类损坏；2026-11-13 实测抓到一整段孤儿块）见
 `references/shared-proxy-service-pitfalls.md` §陷阱 31。收尾时与
 `diff_shared_pitfalls.py` **一起跑**。
+⚠️ **2026-11-15 修正**：该脚本最初把**任何重复的长行**都判 FAIL，而不同 section
+复用同一段 shell 片段是**正常的** → 对**结构完好**的文件稳定 exit 1（假警报）。
+现已把重复长行降级为 `WARN`（不计入退出码），真正的「重复块 / 孤儿块」判据改为
+**固定长度前缀签名**（`SIG_LINES = 8`）。
+⚠️ **别用「整段正文」当签名**：最后一个 section 的正文延伸到 EOF，孤块若是它的复制体
+会被**吸进自己** → 签名改变 → 反而漏报（实测）。
+⇒ 改动后**必须跑回归测试** `scripts/test_shared_pitfalls_structure.py`
+（完好文件 → exit 0；末尾追加无标题孤儿体 → exit 1）。
 
 **本轮新增两个脚本的完整由来与实测数据**（合并脚本的 opcode 决策表、
 AST 指纹判据的原理、与 `check_proxy_env.py` 的分工、「mtime 太粗」的通用教训）
 见 `references/crawl-state-2026-11-06-assets.md`。
 
-**最新一轮爬取快照**见 `references/crawl-state-2026-11-13.md`
+**最新一轮爬取快照**见 `references/crawl-state-2026-11-15.md`
+（**817/560 连续第二次持平（817 = 11-14 突破 799 后的新基线）**：index.json
+**2,540,096 bytes 与 11-14 逐字节相同**（sha1 `40e809118867`）、
+verdict=IDENTICAL、**零网络请求**（0 次 `✓`、raw/ 最新仍是 11-14 11:03）、
+**3:46.5** 落在稳态带内、md/ 今日零重写、无 `.tmp` 残留；姊妹 KB 维持 **560**；
+**8 步标准序列全绿** —— crawl_state=IDENTICAL / index_hygiene（零宽 0、空标题 0、
+幻影 token 可达 0、旧 API 可达 0）/ retrieval_chain（**静默降级 ==800 = 0**，
+短正文 4 条 = 伺服报警占位页 61–71 B，属上游本来就短）/ proxy_health（open 817 + 姊妹 560）/ 
+**check_proxy_env --units（5 个变量三处 sha12 逐项一致，`HERMES_TIMEOUT` sha12=`e49ec846db75` = 1800 ✅）**/ 
+**check_proxy_staleness（线上 PID 1954151 源码 == HEAD `abb129c` → NOT stale，无需 restart）**/ 
+**check_reload_timer（重载链存活，定时器线程 07:17:55 = start+20h 第 4 次 5h 排期，下次重载 12:17:55；内存 817 == 磁盘 817 → in_sync）**/ 
+**e2e 探针 12/12 全 200**（**0 次 502** → 连续第 10 天 502 计数为 0）；
+journal 按进程切片：`Unknown key` 0 / HTTP 500 0 / HTTP 502 0 / `RELOAD FAILED` 0；
+端口仅 8643+8642 无遗留压测进程；
+**🔴 本轮核实：11-14 那轮虽报 HTTP 429，但**爬取本身已完成**——`raw/` 有 18 个文件
+在 11-14 11:03:33 被真正抓取（zh Python SDK 接口 13 + C++ 示例 2 + 控制器文档 2 + EtherCAT 1）
+⇒ **+18 是真实上游增长**，不是本地抽取变更；429 打断的是**收尾阶段**（commit/push）；
+**陷阱 14 第 9 次复发**——11-14 遗留 5 个 `M` + 1 个 `??` 未入库，本轮已闭合（commit `0126c30`，已 push 并用
+`merge-base --is-ancestor` 确认在 remote）；
+**本轮修掉 11-14 遗留的「结构自检脚本是假警报守卫」缺陷**——原脚本把**任何重复长行**判 FAIL
+（不同 section 复用同一段 shell 片段是正常的）→ 对结构完好的文件稳定 exit 1；
+现已把重复长行降为 `WARN`，「重复块 / 孤儿块」改用**固定长度前缀签名**判据
+（`SIG_LINES = 8`；⚠️ 用「整段正文」当签名会被 EOF 吸收 → 漏报），
+并新增**回归测试** `scripts/test_shared_pitfalls_structure.py`（完好 → exit 0；孤儿体 → exit 1）；
+**另一处判读澄清**：11-14 遗留 diff 里那个「31 行孤立删除」看着像「半截行事故」，
+实则正是陷阱 31 要删的**末尾孤儿块**——逐行核对陷阱 27 正式 section（行 1179–1214）内容完整，
+四个标记全在位 ⇒ 删的是重复体、不是正文；
+**共享文件两份 IDENTICAL**（sha1 均 `da8d63f40507`），结构自检 exit 0；
+**姊妹 KB 与本 skill 同窗口并发** → 再次印证 11-03 的结论「并发争抢不是 502 根因」）；
+**上一轮快照**见 `references/crawl-state-2026-11-13.md`
 （**799/560 连续第二十四次持平（本 KB 纯稳态）**：index.json **2,450,869 bytes 与 10-29→11-12 逐字节相同**、
 verdict=IDENTICAL、零网络请求（0 次 `✓`、raw/ 最新仍是 10-23）、**3:26.7** 落在稳态带内、
 md/ 与 raw/ 今日均零重写、无 `.tmp` 残留；姊妹 KB 维持 **560**；
@@ -1161,7 +1198,7 @@ curl http://localhost:8643/health   # 确认 docs 数量是新的
 python3 ~/.hermes/skills/productivity/inexbot-open-knowledge-base/scripts/check_proxy_health.py
 ```
 
-会输出两个 KB 的 docs 数、loaded 状态、对比预期基线（inexbot-open = **799**；inexbot = 560；2026-11-08 起更新）。不一致时 exit code = 1，方便 cron 检测失败。同理 `curl .../health` 单独跑、纯 stdout、不带 pipe，也没事。
+会输出两个 KB 的 docs 数、loaded 状态、对比预期基线（inexbot-open = **817**；inexbot = 560；2026-11-15 起更新）。不一致时 exit code = 1，方便 cron 检测失败。同理 `curl .../health` 单独跑、纯 stdout、不带 pipe，也没事。
 
 > 基线随站点增长而漂移——crawl 跑完后若 docs 数比基线高、且 `/health` 显示 `loaded=True`、三个 locale 都在（zh/en/kr 各自条目数 > 0），属良性增长。判定「真故障」至少要看：
 > 1. docs 数是否**骤降**（如 552 → 100，说明 sidebar 提取挂了）
