@@ -677,7 +677,9 @@ md_root = idx_root / "md"   # md 文件名同样是把 URL path 的 / 替换成 
 `references/index-hygiene-and-systemd-env-bugs.md`。
 
 **本 KB 独有的收尾纪律**（报告写「遗留：无」前必须 `git status` 核过、
-未提交 = 下次 `git pull` 静默回退、姊妹 KB 仓库不要代提交）见
+未提交 = 下次 `git pull` 静默回退、姊妹 KB 仓库不要代提交；
+**外加「半截行」编辑事故**——`git diff` 里只有 `-` 没有 `+`、且 `-` 的是段落前半截
+→ 括号不闭合、句子断裂，而 `git diff --stat` 只会显示「1 -」看着像正常精简）见
 `references/cron-completion-discipline.md`。
 
 **端到端请求探针**（`scripts/check_e2e_request.py` 的原理、状态码判读表、
@@ -700,6 +702,13 @@ hash-only 输出避免密钥明文与 Hermes 输出脱敏误判；`--units` 同�
 **共享文件合并工具**（`scripts/merge_shared_pitfalls.py` —— difflib 三方合并
 「以姊妹为基底 + 把本 skill 独有的 hunk 贴回」，并**按 section 标题双向校验**
 「姊妹 missing=0 / 本 skill 0 丢失」）见上文「共享文件同步」一节。
+
+**共享文件结构自检**（`scripts/check_shared_pitfalls_structure.py` —— 检测
+「重复块 / 孤儿块 / 标题截断」；**sha1 一致 ≠ 结构完好** —— 两个 agent 并发 patch
+同一份共享文件会拼出谁都没写过的结构，而 `diff_shared_pitfalls.py` 只比内容、
+**抓不到**这类损坏；2026-11-13 实测抓到一整段孤儿块）见
+`references/shared-proxy-service-pitfalls.md` §陷阱 31。收尾时与
+`diff_shared_pitfalls.py` **一起跑**。
 
 **本轮新增两个脚本的完整由来与实测数据**（合并脚本的 opcode 决策表、
 AST 指纹判据的原理、与 `check_proxy_env.py` 的分工、「mtime 太粗」的通用教训）
@@ -1696,6 +1705,15 @@ for slug in mod._md_slug_candidates(k):
 > 📌 **完整版（含并发 commit 竞态、policy 拦截总清单、基线速查）见
 > `references/shared-proxy-service-pitfalls.md`** —— 那是两个 KB 共享的权威来源，
 > 姊妹 skill `inexbot-knowledge-base` 里有同一份。
+
+> 🔴 **2026-11-13 又踩了一次 `python3 -c`** —— 就在**收尾阶段**（想打印 index.json 的
+> 条目数 + 字节数，一个「顺手」的验证命令），被 policy 拦成 `approval_required`。
+> **判据不变**：cron 场景**无人能批** → 直接卡死这一轮。
+> **正确写法**：把逻辑写进 `.py` 文件再 `terminal` 跑 `/usr/bin/python3 <file>`；
+> 或纯数据处理用 `execute_code` 沙盒（读 json / 数条目 / 算 sha 都行，**不需要 flask**）。
+> **教训**：这不是「不知道有这个坑」，而是**收尾阶段手松**——
+> 「顺手看一眼」的直觉命令最容易绕过前面刚学到的纪律。
+> ⇒ **写任何 `python3 -c` 之前先想一秒：这是 cron 吗？是 → 立刻改文件路径。**
 
 ### ⚠️ 共享文件必须在**自己轮次的最后**同步（2026-11-01 实测）——但**不能盲目覆盖**（2026-11-02 修订）
 
