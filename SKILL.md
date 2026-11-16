@@ -727,6 +727,14 @@ hash-only 输出避免密钥明文与 Hermes 输出脱敏误判；`--units` 同�
 「差异数整齐地等于条目数」= 字段名/结构取错的指纹（§陷阱 18）。
 2026-11-16 本 skill 实测：inexbot 0 处不一致、inexbot-open 0 处不一致 → PASS）。
 
+**⚠️ 本 skill 自己的反查脚本务必复用 proxy 的 slug 契约（陷阱 34，第 6 次复发）**：
+任何「反查 md 文件」的脚本**必须**用 `crawler.slugify()` 或 proxy 的 `_md_slug_candidates()`，
+**绝不自己重写** —— 手写会漏掉 `lstrip("/")` + `rstrip(".html")` →
+**全量「md 找不到」假阳性**（看着像 KB 回归，实则脚本 bug）。
+判读：若「检索链路实测」正常（snippet > 800、正文命中）却报 slug 契约断裂，
+**几乎一定是检查脚本自己写错了**；契约真断裂的表现是**检索侧** 800 字静默降级或 HTTP 500。
+（姊妹 KB 11-16 实测第 6 次复发 ⇒ 这是**系统性**陷阱，不是手滑。）
+
 **本轮新增两个脚本的完整由来与实测数据**（合并脚本的 opcode 决策表、
 AST 指纹判据的原理、与 `check_proxy_env.py` 的分工、「mtime 太粗」的通用教训）
 见 `references/crawl-state-2026-11-06-assets.md`。
