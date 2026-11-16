@@ -1,8 +1,8 @@
 ---
 name: inexbot-open-knowledge-base
 description: "纳博特开放平台知识库 RAG：每天定时爬取 open.inexbot.com，由 hermes-skill-proxy 在请求时进行内存检索并注入 system prompt。"
-version: 1.30.0
-last_verified: 2026-11-15
+version: 1.31.0
+last_verified: 2026-11-16
 author: Hermes Agent
 license: MIT
 metadata:
@@ -718,11 +718,49 @@ hash-only 输出避免密钥明文与 Hermes 输出脱敏误判；`--units` 同�
 ⇒ 改动后**必须跑回归测试** `scripts/test_shared_pitfalls_structure.py`
 （完好文件 → exit 0；末尾追加无标题孤儿体 → exit 1）。
 
+**token 级一致性守卫**（`scripts/check_token_consistency.py` —— 姊妹 KB 11-16 写下、
+本 skill 目录同步出现（陷阱 13）：比对「proxy 内存索引 vs 磁盘 index.json」的
+**逐条 token 集合**，一次覆盖两个 KB）。三个必须同时守住的点（错了就是**全量假阳性**）：
+① 内存侧用 `_doc_scores[kb]`（分词后的 token 集合），**不是** `_index_data[kb]`（原始 dict）；
+② 磁盘侧字段名是 `title` / `description` / `content_snippet`（**不是** `desc` / `content`）；
+③ 两边用**同一套 jieba 规则**（`len(w) >= 2`），且必须先 `mod.load_all_indexes()`。
+「差异数整齐地等于条目数」= 字段名/结构取错的指纹（§陷阱 18）。
+2026-11-16 本 skill 实测：inexbot 0 处不一致、inexbot-open 0 处不一致 → PASS）。
+
 **本轮新增两个脚本的完整由来与实测数据**（合并脚本的 opcode 决策表、
 AST 指纹判据的原理、与 `check_proxy_env.py` 的分工、「mtime 太粗」的通用教训）
 见 `references/crawl-state-2026-11-06-assets.md`。
 
-**最新一轮爬取快照**见 `references/crawl-state-2026-11-15.md`
+**最新一轮爬取快照**见 `references/crawl-state-2026-11-16.md`
+（**817/560 连续第三次持平（817 = 11-14 突破 799 后的新基线）**：index.json
+**2,540,096 bytes 与 11-14/11-15 逐字节相同**（sha1 `40e809118867`）、
+verdict=IDENTICAL、**零网络请求**（0 次 `✓`、raw/ 最新仍是 11-14 11:03）、
+**3:47.5** 落在稳态带内、md/ 今日零重写、无 `.tmp` 残留；姊妹 KB 维持 **560**；
+**8 步标准序列全绿** —— crawl_state=IDENTICAL / index_hygiene（零宽 0、空标题 0、
+幻影 token 可达 0、旧 API 可达 0）/ retrieval_chain（**静默降级 ==800 = 0**，
+短正文 4 条 = 伺服报警占位页 61–71 B，属上游本来就短）/ proxy_health（open 817 + 姊妹 560）/ 
+**check_proxy_env --units（5 个变量三处 sha12 逐项一致，`HERMES_TIMEOUT` sha12=`e49ec846db75` = 1800 ✅）**/ 
+**check_proxy_staleness（线上 PID 1954151 源码 == HEAD `abb129c` → NOT stale，无需 restart）**/ 
+**check_reload_timer（重载链存活，定时器线程 08:18:08 = start+21h 第 5 次 5h 排期，下次重载 13:18:08；内存 817 == 磁盘 817 → in_sync）**/ 
+**e2e 探针 12/12 全 200**（65.3–184.8s，**0 次 502** → 连续第 11 天 502 计数为 0）；
+journal 按进程切片（383 行）：`Unknown key` 0 / HTTP 500 0 / HTTP 502 0 / `RELOAD FAILED` 0 /
+`Traceback` 0 / HTTP 200 = 36；端口仅 8643+8642 无遗留压测进程；
+**🔴 本轮核实：11-15 那轮被 HTTP 429 打断 → 其报告正文的提交结论一律作废**
+（陷阱 14 第 10 次复发，已闭合）—— 独立 `git status` 核对发现
+`M references/shared-proxy-service-pitfalls.md` 未入库（姊妹 KB 11-15 新增的**陷阱 32/33**
+只写进共享文件没入库，若被 `git pull` 静默回退 → 这两条新知识会消失）→ 本轮已闭合入库；
+**共享文件两份 IDENTICAL**（sha1 均 `020468fb455e`），结构自检 exit 0、
+回归测试 exit 0（完好 → 0；孤儿体 → 1）；
+**姊妹 KB 仓库已干净**（commit `633a07c`，陷阱 32/33 已入库）→ 同步方向为「姊妹独有行 = 0 → cp 覆盖」；
+**姊妹 KB 与本 skill 同窗口并发**（姊妹 11:01:xx 起爬 + 起 e2e 探针）→ 两边均 12/12 全 200、
+**0 次 502** → 再次印证 11-03 的结论「并发争抢不是 502 根因」；
+**proxy 未 restart**（index 逐字节未变 + 线上源码 AST 等价于 HEAD）→ 未打断姊妹探针；
+**本轮同步入库的两条新陷阱（姊妹 11-15 写下）**——
+**陷阱 32**：`scan_kb_topic.py` 是 **AND 语义** → 多词查询（如「冲压工艺 手册」）给**假 0 命中**
+⇒ **「0 命中」永远要先用更短的单个核心词复验一次再下结论**；
+**陷阱 33**：用 `ps` 判「探针还在跑」时 grep 模式**含目录会漏判**（cmdline 是相对路径）
+⇒ grep 脚本文件名，不要 grep 含目录的完整路径；更好的判据是 `process(action='poll')` 的 `status`；
+**上一轮快照**见 `references/crawl-state-2026-11-15.md`
 （**817/560 连续第二次持平（817 = 11-14 突破 799 后的新基线）**：index.json
 **2,540,096 bytes 与 11-14 逐字节相同**（sha1 `40e809118867`）、
 verdict=IDENTICAL、**零网络请求**（0 次 `✓`、raw/ 最新仍是 11-14 11:03）、
