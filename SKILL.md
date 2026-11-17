@@ -1,8 +1,8 @@
 ---
 name: inexbot-open-knowledge-base
 description: "纳博特开放平台知识库 RAG：每天定时爬取 open.inexbot.com，由 hermes-skill-proxy 在请求时进行内存检索并注入 system prompt。"
-version: 1.31.0
-last_verified: 2026-11-16
+version: 1.32.0
+last_verified: 2026-11-17
 author: Hermes Agent
 license: MIT
 metadata:
@@ -739,7 +739,40 @@ hash-only 输出避免密钥明文与 Hermes 输出脱敏误判；`--units` 同�
 AST 指纹判据的原理、与 `check_proxy_env.py` 的分工、「mtime 太粗」的通用教训）
 见 `references/crawl-state-2026-11-06-assets.md`。
 
-**最新一轮爬取快照**见 `references/crawl-state-2026-11-16.md`
+**最新一轮爬取快照**见 `references/crawl-state-2026-11-17.md`
+（**817/560 连续第四次持平（817 = 11-14 突破 799 后的新基线）**：index.json
+**2,540,096 bytes 与 11-14/15/16 逐字节相同**（sha1 `40e809118867`）、
+verdict=IDENTICAL、**零网络请求**（0 次 `✓`、raw/ 最新仍是 11-14 11:03）、
+**4:06.7** 落在稳态带内、md/ 今日零重写、无 `.tmp` 残留；姊妹 KB 维持 **560**；
+**8 步标准序列全绿** —— crawl_state=IDENTICAL / index_hygiene（零宽 0、空标题 0、
+幻影 token 可达 0、旧 API 可达 0）/ retrieval_chain（**静默降级 ==800 = 0**，
+短正文 4 条 = 伺服报警占位页 61–71 B，属上游本来就短）/ proxy_health（open 817 + 姊妹 560）/ 
+**check_proxy_env --units（5 个变量三处 sha12 逐项一致，`HERMES_TIMEOUT` sha12=`e49ec846db75` = 1800 ✅）**/ 
+**check_proxy_staleness（线上 PID 1954151 源码 == HEAD `abb129c` → NOT stale，无需 restart）**/ 
+**check_reload_timer（重载链存活，定时器线程 09:18:22 = start+22h 第 5 次 5h 排期，下次重载 14:18:22；内存 817 == 磁盘 817 → in_sync）**/ 
+**e2e 探针 12/12 全 200**（52.4–175.0s，其中 2 次 > 150s → 旧 300s 上限下极可能 502，
+**0 次 502** → 连续第 12 天 502 计数为 0）；
+journal 按进程切片（736 行）：`Unknown key` 0 / HTTP 500 0 / HTTP 502 0 / `RELOAD FAILED` 0 /
+`Traceback` 0 / HTTP 200 = 70 / HTTP 404 = 15（**全是外部扫描器**：`GET /`、`OPTIONS /`、
+`/nice%20ports,/Trinity.txt.bak`、`/server-info`、`/version`，来源 `101.133.224.200`）；
+端口仅 8643+8642 无遗留压测进程；
+**🔴 本轮闭合了陷阱 14 第 11 次复发** —— 11-16 那轮**以 `ok` 结束**，
+但把姊妹 agent 写进本仓库的**陷阱 36/37**（104 行）留在了工作树未入库
+（`git show HEAD:` 只有 35 个 section vs 工作树 37 个）→ 若被 `git pull` 静默回退，
+这两条新知识会消失 → 本轮已闭合入库；
+**共享文件同步方向 = 保持本 skill 版本，不 cp 覆盖**（姊妹 1678 行/84,106 B sha1 `97830fa33e66f916`
+vs 本 skill 1782 行/89,536 B sha1 `d3cf373efa8368db`；**姊妹独有 section = 0**，
+本 skill 独有 **陷阱 36 + 陷阱 37** → 盲目 cp 会直接抹掉这两条），
+结构自检 exit 0、回归测试 exit 0（完好 → 0；孤儿体 → 1）；
+**姊妹 KB 仓库已干净**（commit `b4be2c3`）且已入库 `scripts/check_token_consistency.py`
+⇒ 两边都引用、两边都有实体，无悬空引用；
+**本轮补充守卫全绿** —— `check_token_consistency.py` **PASS**（inexbot 0 处不一致 /
+inexbot-open 0 处不一致）、md 可达性 **817/817** 全部解析成功；
+**⚠️ 本轮又差点踩陷阱 34（第 7 次）** —— 先用**自写** `crawler.slugify()` 直连统计可达性，
+得到「790/817」这个**假阳性**（看着像 KB 回归），换成 proxy 的 `_md_slug_candidates()`
+后立刻变成 817/817 ⇒ **再次印证「反查 md 必须走 proxy 的 slug 契约，绝不自己重写」**；
+**proxy 未 restart**（index 逐字节未变 + 线上源码 AST 等价于 HEAD）；
+**上一轮快照**见 `references/crawl-state-2026-11-16.md`
 （**817/560 连续第三次持平（817 = 11-14 突破 799 后的新基线）**：index.json
 **2,540,096 bytes 与 11-14/11-15 逐字节相同**（sha1 `40e809118867`）、
 verdict=IDENTICAL、**零网络请求**（0 次 `✓`、raw/ 最新仍是 11-14 11:03）、
