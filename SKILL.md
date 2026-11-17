@@ -750,19 +750,19 @@ verdict=IDENTICAL、**零网络请求**（0 次 `✓`、raw/ 最新仍是 11-14 
 **check_proxy_env --units（5 个变量三处 sha12 逐项一致，`HERMES_TIMEOUT` sha12=`e49ec846db75` = 1800 ✅）**/ 
 **check_proxy_staleness（线上 PID 1954151 源码 == HEAD `abb129c` → NOT stale，无需 restart）**/ 
 **check_reload_timer（重载链存活，定时器线程 09:18:22 = start+22h 第 5 次 5h 排期，下次重载 14:18:22；内存 817 == 磁盘 817 → in_sync）**/ 
-**e2e 探针 12/12 全 200**（52.4–175.0s，其中 2 次 > 150s → 旧 300s 上限下极可能 502，
-**0 次 502** → 连续第 12 天 502 计数为 0）；
-journal 按进程切片（736 行）：`Unknown key` 0 / HTTP 500 0 / HTTP 502 0 / `RELOAD FAILED` 0 /
-`Traceback` 0 / HTTP 200 = 70 / HTTP 404 = 15（**全是外部扫描器**：`GET /`、`OPTIONS /`、
+**e2e 探针 12/12 全 200**（52.4–**230.3**s，其中 4 次 > 145s、**最大一次 230.3s 在旧 300s
+上限下必然 502**，**0 次 502** → 连续第 12 天 502 计数为 0；整轮约 23 分钟）；
+journal 按进程切片（928 行）：`Unknown key` 0 / HTTP 500 0 / HTTP 502 0 / `RELOAD FAILED` 0 /
+`Traceback` 0 / HTTP 200 = 84 / HTTP 404 = 15（**全是外部扫描器**：`GET /`、`OPTIONS /`、
 `/nice%20ports,/Trinity.txt.bak`、`/server-info`、`/version`，来源 `101.133.224.200`）；
 端口仅 8643+8642 无遗留压测进程；
 **🔴 本轮闭合了陷阱 14 第 11 次复发** —— 11-16 那轮**以 `ok` 结束**，
 但把姊妹 agent 写进本仓库的**陷阱 36/37**（104 行）留在了工作树未入库
 （`git show HEAD:` 只有 35 个 section vs 工作树 37 个）→ 若被 `git pull` 静默回退，
 这两条新知识会消失 → 本轮已闭合入库；
-**共享文件同步方向 = 保持本 skill 版本，不 cp 覆盖**（姊妹 1678 行/84,106 B sha1 `97830fa33e66f916`
-vs 本 skill 1782 行/89,536 B sha1 `d3cf373efa8368db`；**姊妹独有 section = 0**，
-本 skill 独有 **陷阱 36 + 陷阱 37** → 盲目 cp 会直接抹掉这两条），
+**共享文件同步方向 = 先 diff 再决定**（收尾时姊妹已把陷阱 36/37 回写进本 skill 副本 →
+两份 **IDENTICAL**，sha1 均为 `d3cf373efa8368db`，本 skill 1782 行/89,536 B / 37 section；
+姊妹独有 section = 0 → **无需覆盖，同步方向 = 保持现状**），
 结构自检 exit 0、回归测试 exit 0（完好 → 0；孤儿体 → 1）；
 **姊妹 KB 仓库已干净**（commit `b4be2c3`）且已入库 `scripts/check_token_consistency.py`
 ⇒ 两边都引用、两边都有实体，无悬空引用；
