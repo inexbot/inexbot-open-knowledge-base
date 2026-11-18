@@ -35,7 +35,7 @@ TIMEOUT = 5  # seconds
 # 799 (2026-10-18/19/21/22; four consecutive flat cycles, index.json byte-identical
 # since 10-19 — the zh sidebar +2/cycle growth has fully stopped).
 BASELINES = {
-    "inexbot-open": 817,   # +18 on 2026-11-14 (zh 443->461: Python SDK interfaces, C++ examples, controller docs)
+    "inexbot-open": 832,   # +15 on 2026-11-18 (zh 461->476: 17 new pages fetched, minus 2 upstream renames)
     "inexbot":       560,  # doc.inexbot.com (sister KB); grew 547 → 557 → 558 → 560
 }
 
