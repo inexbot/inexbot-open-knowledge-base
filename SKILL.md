@@ -1,8 +1,8 @@
 ---
 name: inexbot-open-knowledge-base
 description: "纳博特开放平台知识库 RAG：每天定时爬取 open.inexbot.com，由 hermes-skill-proxy 在请求时进行内存检索并注入 system prompt。"
-version: 1.33.0
-last_verified: 2026-11-19
+version: 1.34.0
+last_verified: 2026-11-20
 author: Hermes Agent
 license: MIT
 metadata:
@@ -739,7 +739,37 @@ hash-only 输出避免密钥明文与 Hermes 输出脱敏误判；`--units` 同�
 AST 指纹判据的原理、与 `check_proxy_env.py` 的分工、「mtime 太粗」的通用教训）
 见 `references/crawl-state-2026-11-06-assets.md`。
 
-**最新一轮爬取快照**见 `references/crawl-state-2026-11-19.md`
+**最新一轮爬取快照**见 `references/crawl-state-2026-11-20.md`
+（**832 稳态、连续第 3 天持平**：crawl_state = **IDENTICAL**，
+index.json **2,620,789 bytes** 与 11-18 / 11-19 **逐字节相同**、locale zh=476 / en=178 / kr=178；
+**网络抓取次数 = 0**（日志 `✓` 行数 0、`raw/` 最新 mtime = 11-18 11:03 早于爬取起点）
+⇒ **纯本地重抽取，上游零变更**；耗时 **3:43**、md/ 今日新增 0、无 `.tmp` 残留；
+姊妹 KB **561**；
+**8 步标准序列全绿** —— index_hygiene（零宽 0、空标题 0、幻影 token 可达 0、旧 API 可达 0）/
+retrieval_chain（**静默降级 ==800 = 0**，短正文 4 条 = 伺服报警占位页 61–71 B，属上游本来就短）/
+proxy_health（open **832** + 姊妹 **561**）/ check_proxy_env --units（5 个变量三处 sha12 逐项一致，
+`HERMES_TIMEOUT` sha12=`e49ec846db75` = 1800 ✅）/ check_proxy_staleness（线上 PID **2016323**
+源码 == HEAD `b9def11` → NOT stale，无需 restart）/ check_reload_timer（重载链存活，
+定时器线程 tid=2016337 = 11-05:01 起，下次重载 16:05:01；内存 832 == 磁盘 832 → **已同步**）/
+md 可达性 **832/832** + 姊妹 561/561；token 级一致性 **PASS**（两个 KB 各 0 处不一致）；
+共享文件结构自检 **OK**（本库 41 / 姊妹 39 sections）；
+journal 按进程切片（PID 2016323）：`Unknown key` 0 / HTTP 500 0 / HTTP 502 0 /
+`RELOAD FAILED` 0 / `Traceback` 0 / HTTP 200 = 4 / HTTP 404 = 0；
+**e2e 探针 12/12 全 200**（44.8–205.9s，**0 次 502/500** → 连续第 15 天 502 计数为 0）；
+姊妹 KB 探针日志用 `/tmp/e2e-<日期>.log`、本 KB 用 `/tmp/e2e-open-<日期>.log` → **本轮无互相覆盖** ✅）。
+
+> 📌 **本轮三个要点**（完整分析见快照 §三、§五、§七）：
+> ① **11-19 那轮因 429 中断而未部署的 proxy 补丁，本轮开跑时已上线** ——
+>    proxy 于 **11-20 11:04:53** 被重启（新 PID **2016323**），带上了 HEAD `b9def11` 的
+>    `url_suffix` 补丁。**本轮全程未对 proxy 做过一次 restart**（§陷阱 20 再次生效）。
+> ② **修好了姊妹版 `check_url_to_index_key.py` 的「死代码」缺口** ——
+>    姊妹 11-19 新增的 `norm_key_candidates()` **没有接进主循环** ⇒ 目录页必 miss。
+>    本库移植 + 接线后：**URL→index-key 命中 1/93 → 93/93**（§陷阱 24/25 同族的假阳性）。
+> ③ **姊妹 KB 的 `verify_kb.py` 对本库报 4 项 FAIL，全部是姊妹专属假设** ——
+>    她是 zh-only 且 md:index = 1:1；本库是 i18n + 178 个无前缀死缓存 + 34 个上游空目录页
+>    ⇒ **不要**把姊妹的 `verify_kb.py` 当本库的验收标准（见快照 §七）。
+
+**上一轮（11-19）快照**见 `references/crawl-state-2026-11-19.md`
 （**832 稳态、连续第 2 天持平**：crawl_state = **IDENTICAL**，
 index.json **2,620,789 bytes** 与 11-18 **逐字节相同**、locale zh=476 / en=178 / kr=178；
 **网络抓取次数 = 0**（日志 `✓` 行数 0、`raw/` 最新 mtime = 11-18 11:03 早于爬取起点）
@@ -1345,6 +1375,17 @@ python3 $SK/scripts/check_proxy_health.py
 > 10-31 已固化成 `scripts/check_index_hygiene.py`。
 > 第 4 步 exit 1 或第 3 步 exit 1 → 本轮 cron 算**失败**，要在报告里点名。
 >
+> ⚠️ **姊妹 KB 的 `verify_kb.py` 不能当本库的验收标准**（2026-11-20 实测）：
+> 姊妹那版有 4 条 check 是**为「zh-only 且 md:index = 1:1」的单语言库**写的 ——
+> `md 文件数 == index 条目数` / `raw 文件数 == index 条目数` /
+> `无零长度 snippet` / `含图 md 全部可从 index 反查`。
+> 本库是 **i18n（zh/en/kr）** + 有 **178 个无前缀死缓存**（旧版 `slugify()` 不加
+> locale 前缀留下的孤儿，**不可达、无副作用**）+ **34 个上游空目录页**（snippet 为空，
+> 属上游本来如此）⇒ 这 4 项**必然 FAIL**，但**全是结构性假阳性**，不是本库故障。
+> ⇒ 本库沿用自己的 `check_crawl_state.py` / `check_index_hygiene.py` /
+> `check_md_reachability.py` 作为权威守卫。逐条核实见
+> `references/crawl-state-2026-11-20.md` §七。
+>
 > ⚠️ **第 5 步是姊妹 KB 10-31 才加的，勿删**：它抓到了 `HERMES_TIMEOUT` 硬编码 120s
 > 这个**真实用户故障**（随机 502），而当时 `/health`、检索链路、引用链接**全部照常绿灯**。
 > **其余 4 步全绿也不能替代它** —— 只有真正打一次完整请求才暴露。
@@ -1363,9 +1404,23 @@ python3 $SK/scripts/check_proxy_health.py
 > ```bash
 > /usr/bin/python3 $SK/scripts/check_url_to_index_key.py
 > ```
-> 2026-11-09 新增。**归一化只应替换 `%26` / `%2B`**；写成整体 `unquote()` 会破坏
-> 中文那半边的 `%XX` → 实测 47 条里只有 1 条能查到 → **误报「md not found」**，
-> 差点被当成 KB 回归写进报告。详见上文「反向查表守卫」一节 + 共享 pitfalls §陷阱 24。
+> **⚠️ 归一化规则必须按 KB 分开**（2026-11-20 实测更正，这条最容易写错）：
+>
+> | KB | index key 形态 | 中文 | `&` / `+` | 需要的动作 |
+> |---|---|---|---|---|
+> | `inexbot`（doc.inexbot.com） | 已 percent 编码 | `%E6%8A%80…` | 字面 | 只把 url 里的 `%26`→`&`、`%2B`→`+`，**中文那半边的 `%XX` 原样保留** |
+> | `inexbot-open`（open.inexbot.com） | **明文中文** | `上位机` | 字面 | url 是整体编码态 → 需**整体 `unquote()`** |
+>
+> **用同一条规则套两个 KB → 必然大面积假 miss**（看着像 KB 回归，实为脚本自伤）。
+> 2026-11-10 姊妹 KB 实测：`inexbot` 559/560 key 含 `%`、`inexbot-open` **0** 个含 `%`。
+>
+> **⚠️ 2026-11-19 起还要剥 URL 后缀**：`inexbot` 侧 url 现在带 `.html`（普通页）/
+> `/index.html`（目录页）后缀，而 index key 是**去掉后缀**的相对路径 ⇒ 必须先剥再查表。
+> **⚠️ 目录页的 key 带尾斜杠**（`/zh/`），剥完 `/index.html` 只得到 `/zh` ⇒
+> 必须**同时试「带尾斜杠」和「不带尾斜杠」两种形态**。
+> 本库 `norm_key_candidates()` 已实现；**姊妹版 11-19 定义了该函数却没接进主循环**
+> （死代码）⇒ 本库移植时已顺手修好，命中 **93/93**（此前 1/93）。
+> 详见上文「反向查表守卫」一节 + 共享 pitfalls §陷阱 24/25。
 >
 > 📌 **第 7 步（可选，但 proxy 的 .py 有改动时必跑）**：判定线上进程是否**行为上**陈旧
 > ```bash
@@ -1708,6 +1763,25 @@ python3 ~/.hermes/skills/productivity/inexbot-open-knowledge-base/scripts/diff_s
 > ⚠️ **姊妹独有行 > 0 时，也不能只看行数** —— 必须逐条看那几行是**知识**还是**过时残留**。
 > 「我们比姊妹多 7 行」既可能是「我们多了 7 条独有知识」（该反向补齐），
 > 也可能是「我们留着 7 行过时内容」（该 cp 覆盖）—— **两种情况行数完全一样**。
+
+> 🔴 **2026-11-20 现场：合并脚本把「已被姊妹吸收的 section」重新插了一遍 → 制造出重复块。**
+> 姊妹已把我们原「陷阱 39 / 40」**吸收并重编号为 41 / 42**（正文是干净重建版），
+> 而我们的旧副本**正文还是坏的**（姊妹 11-20 明确记录：我们那份当时被并发 patch 拼坏，
+> 「陷阱 39：上游改 URL 形态」的正文**与陷阱 41 的正文逐行交错**）。
+> ⇒ `merge_shared_pitfalls.py` 把我们的坏正文当「独有 hunk」贴了回去 ⇒ **44 sections、
+> 陷阱 40 出现两次** ⇒ `check_shared_pitfalls_structure.py` 报 `[DUPLICATE_BLOCK]`、
+> `test_shared_pitfalls_structure.py` **exit 1**（完好文件应 exit 0）。
+>
+> **⇒ 合并脚本的判据只看「标题集合」，看不出「同名不同号 + 正文一好一坏」。**
+> **对策**：合并后**必须**跑 `check_shared_pitfalls_structure.py` +
+> `test_shared_pitfalls_structure.py`；**一旦报 DUPLICATE_BLOCK**，
+> 优先怀疑「姊妹已吸收我们的 section 并重编号」→ **直接 `cp` 姊妹那份**（姊妹是权威版），
+> 而不是继续调合并参数。
+>
+> 💡 **本轮实测**：我们的「陷阱 39：上游改 URL 形态」section 正文只有 **57 字符**
+> （= 只有标题、正文为空）⇒ 这就是「被并发 patch 拼坏」的直接证据。
+> 姊妹那份正文 3,014 字符、内容完整 ⇒ **以姊妹为基底是正确的**。
+
 
 > ⚠️ **「双方各有独有 section」不要手工合并。** 2026-11-06 现场：
 > 姊妹 787 行/38,872 B vs 本 skill 760 行/37,406 B，**双方各有独有内容**
