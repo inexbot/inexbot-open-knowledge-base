@@ -2,7 +2,7 @@
 name: inexbot-open-knowledge-base
 description: "纳博特开放平台知识库 RAG：每天定时爬取 open.inexbot.com，由 hermes-skill-proxy 在请求时进行内存检索并注入 system prompt。"
 version: 1.33.0
-last_verified: 2026-11-18
+last_verified: 2026-11-19
 author: Hermes Agent
 license: MIT
 metadata:
@@ -739,7 +739,26 @@ hash-only 输出避免密钥明文与 Hermes 输出脱敏误判；`--units` 同�
 AST 指纹判据的原理、与 `check_proxy_env.py` 的分工、「mtime 太粗」的通用教训）
 见 `references/crawl-state-2026-11-06-assets.md`。
 
-**最新一轮爬取快照**见 `references/crawl-state-2026-11-18.md`
+**最新一轮爬取快照**见 `references/crawl-state-2026-11-19.md`
+（**832 稳态、连续第 2 天持平**：crawl_state = **IDENTICAL**，
+index.json **2,620,789 bytes** 与 11-18 **逐字节相同**、locale zh=476 / en=178 / kr=178；
+**网络抓取次数 = 0**（日志 `✓` 行数 0、`raw/` 最新 mtime = 11-18 11:03 早于爬取起点）
+⇒ **纯本地重抽取，上游零变更**；耗时 4:42（爬取段 3:15 + 索引段 2:10）、md/ 今日新增 0、无 `.tmp` 残留；
+姊妹 KB 维持 **560**；
+**8 步标准序列全绿** —— index_hygiene（零宽 0、空标题 0、幻影 token 可达 0、旧 API 可达 0）/
+retrieval_chain（**静默降级 ==800 = 0**，短正文 4 条 = 伺服报警占位页 61–71 B，属上游本来就短）/
+proxy_health（open **832** + 姊妹 **560**）/ check_proxy_env --units（5 个变量三处 sha12 逐项一致，
+`HERMES_TIMEOUT` sha12=`e49ec846db75` = 1800 ✅）/ check_proxy_staleness（线上 PID 1954151
+源码 == HEAD `abb129c` → NOT stale，无需 restart）/ check_reload_timer（重载链存活，
+定时器线程 tid=2001822 = 11-19 06:18:47 起第 5 次 5h 排期，下次重载 11:18:47；
+内存 832 == 磁盘 832 → **已同步**）/ md 可达性 **832/832** + 姊妹 560/560；
+token 级一致性 **PASS**（两个 KB 各 0 处不一致）；共享文件结构自检 **OK**（40 / 38 sections）；
+journal 按进程切片（1,445 行）：`Unknown key` 0 / HTTP 500 0 / HTTP 502 0 /
+`RELOAD FAILED` 0 / `Traceback` 0 / HTTP 200 = 131 / HTTP 404 = 46（**全是外部扫描器**）；
+**e2e 探针 12/12 全 200**（57.3–355.0s，**0 次 502/500** → 连续第 14 天 502 计数为 0）；
+姊妹 KB 探针日志用 `/tmp/e2e-<日期>.log`、本 KB 用 `/tmp/e2e-open-<日期>.log` → **本轮无互相覆盖** ✅）。
+
+**上一轮（11-18）快照**见 `references/crawl-state-2026-11-18.md`
 （**832/560 打破 817 稳态**：zh sidebar +15 → 832 = 11-18 突破 817 后的新基线；
 index.json **2,620,789 bytes**、locale zh=476 / en=178 / kr=178；
 **17 个页面今天被真正抓取**（raw/ 最新 mtime = 11-18 11:03，**非**本地抽取变更）；
