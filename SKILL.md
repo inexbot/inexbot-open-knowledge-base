@@ -1,8 +1,8 @@
 ---
 name: inexbot-open-knowledge-base
 description: "纳博特开放平台知识库 RAG：每天定时爬取 open.inexbot.com，由 hermes-skill-proxy 在请求时进行内存检索并注入 system prompt。"
-version: 1.34.0
-last_verified: 2026-11-20
+version: 1.35.0
+last_verified: 2026-11-21
 author: Hermes Agent
 license: MIT
 metadata:
@@ -500,9 +500,9 @@ systemd-analyze verify /tmp/probe-fixed.service 2>&1 | grep probe-fixed
 curl http://localhost:8643/health
 ```
 
-正常返回（inexbot-open 当前应约为 **832** 篇：自 2026-08-25 起连续 7 次稳态 721 后，2026-09-29 zh sidebar +74 涨到 795，2026-10-01 再 +2 涨到 797，2026-10-10 再 +2 涨到 799，2026-10-18→11-13 连续 24 次持平（docs 数自 10-10 起 34 天零新增），**2026-11-14 zh +18 涨到 817**（Python SDK 接口 13 + C++ 示例 2 + 控制器文档 2 + EtherCAT 排障 1 —— `raw/` 有 18 个文件在 11-14 11:03:33 被真正抓取，**是真实上游增长**），2026-11-15/16/17 持平；**2026-11-18 zh +15 涨到 832**（新增 17 页 —— Python 示例 8 + 「控制器报错码」分章节目录 7 + 上游改名 2 —— `raw/` 有 17 个文件在 11-18 11:03 被真正抓取，**是真实上游增长**）；en/kr 长期稳态 178；`inexbot` 约 **560** 篇；2026-11-18 现场验证）：
+正常返回（inexbot-open 当前应约为 **832** 篇：自 2026-08-25 起连续 7 次稳态 721 后，2026-09-29 zh sidebar +74 涨到 795，2026-10-01 再 +2 涨到 797，2026-10-10 再 +2 涨到 799，2026-10-18→11-13 连续 24 次持平（docs 数自 10-10 起 34 天零新增），**2026-11-14 zh +18 涨到 817**（Python SDK 接口 13 + C++ 示例 2 + 控制器文档 2 + EtherCAT 排障 1 —— `raw/` 有 18 个文件在 11-14 11:03:33 被真正抓取，**是真实上游增长**），2026-11-15/16/17 持平；**2026-11-18 zh +15 涨到 832**（新增 17 页 —— Python 示例 8 + 「控制器报错码」分章节目录 7 + 上游改名 2 —— `raw/` 有 17 个文件在 11-18 11:03 被真正抓取，**是真实上游增长**）；en/kr 长期稳态 178；`inexbot` 约 **561** 篇（11-19 起从 560 涨到 561）；2026-11-21 现场验证）：
 ```json
-{"status":"ok","indexes":{"inexbot":{"docs":560,"loaded":true},"inexbot-open":{"docs":832,"loaded":true}}}
+{"status":"ok","indexes":{"inexbot":{"docs":561,"loaded":true},"inexbot-open":{"docs":832,"loaded":true}}}
 ```
 
 > 历史基线快照：534（2026-07-18）→ 552（2026-07-26）→ 636（2026-07-31）→ 715（2026-08-21）→ **721（2026-08-25 起连续 7 次稳态，截至 2026-09-21）** → **795（2026-09-29，+74 zh sidebar 新增，打破稳态）** → **797（2026-10-01，+2 zh sidebar 持续增长）** → **799（2026-10-10，再 +2 zh sidebar 持续增长）** → **799（2026-10-18，首次持平）** → **799（2026-10-19，连续第二次持平）** → **799（2026-10-21，连续第三次持平，字节级对比首次可用，verdict=IDENTICAL）** → **799（2026-10-22，连续第四次持平，2,448,900 bytes 与 10-19 逐字节相同；姊妹 KB inexbot 反而 +1 到 558）**。每次良性增长都直接 patch 进 `check_proxy_health.py` 的 `BASELINES`。
@@ -739,7 +739,40 @@ hash-only 输出避免密钥明文与 Hermes 输出脱敏误判；`--units` 同�
 AST 指纹判据的原理、与 `check_proxy_env.py` 的分工、「mtime 太粗」的通用教训）
 见 `references/crawl-state-2026-11-06-assets.md`。
 
-**最新一轮爬取快照**见 `references/crawl-state-2026-11-20.md`
+**最新一轮爬取快照**见 `references/crawl-state-2026-11-21.md`
+（**832 稳态、连续第 4 天持平**：crawl_state = **IDENTICAL**，
+index.json **2,620,789 bytes** 与 11-18 / 11-19 / 11-20 **逐字节相同**、locale zh=476 / en=178 / kr=178；
+**网络抓取次数 = 0**（日志 `✓` 行数 0、`raw/` 最新 mtime = 11-18 11:03 早于爬取起点）
+⇒ **纯本地重抽取，上游零变更**；耗时 **3:56**、md/ 今日改动 0、无 `.tmp` 残留；
+姊妹 KB **561**；
+**8 步标准序列全绿** —— index_hygiene（零宽 0、空标题 0、幻影 token 可达 0、旧 API 可达 0）/
+retrieval_chain（**静默降级 ==800 = 0**，短正文 4 条 = 伺服报警占位页 61–71 B，属上游本来就短）/
+proxy_health（open **832** + 姊妹 **561**）/ check_proxy_env --units（5 个变量三处 sha12 逐项一致，
+`HERMES_TIMEOUT` sha12=`e49ec846db75` = 1800 ✅）/ check_proxy_staleness（线上 PID **2016323**
+源码 == HEAD `b9def11` → NOT stale，无需 restart）/ check_reload_timer（重载链存活，
+定时器线程 tid=2027591 = 07:05:12 起，下次重载 12:05:12；内存 832 == 磁盘 832 → **已同步**）/
+md 可达性 **832/832** + 姊妹 561/561；token 级一致性 **PASS**（两个 KB 各 0 处不一致）；
+共享文件结构自检 **OK**（两库各 42 sections）+ `diff_shared_pitfalls.py` **IDENTICAL**
+（sha1 `74ee0c7fd0aa` 两库一致 → 本轮无需同步）；
+journal 按进程切片（PID 2016323，466 行）：`Unknown key` 0 / HTTP 500 0 / HTTP 502 0 /
+`RELOAD FAILED` 0 / `Traceback` 0 / HTTP 200 = 45；
+**e2e 探针 12/12 全 200**（43.1–118.7s，**0 次 502/500** → 连续第 16 天 502 计数为 0）；
+姊妹 KB 探针日志用 `/tmp/e2e-<日期>.log`、本 KB 用 `/tmp/e2e-open-<日期>.log` → **本轮无互相覆盖** ✅）。
+
+> 📌 **本轮要点**（完整分析见快照 §三、§五、§七）：
+> ① **11-20 那轮被 HTTP 429 打断 ⇒ 其报告正文的「已提交」结论一律作废**（§陷阱 14 同族规则）。
+>    本轮**独立核验**（不信任上一轮报告）：本库 `git status -sb` 干净、11-20 快照**已在版本库**
+>    （commit `919c25f`）⇒ 实质工作已入库（提交发生在写报告之前，顺序正确）。
+> ② **SKILL.md 体积仍健康**：**84,121 字符 / 132,792 字节 / 2080 行**
+>    → **未顶破 `skill_manage patch` 的 100,000 字符上限**（§陷阱 41 的瘦身手术持续有效，无需再瘦身）。
+> ③ **本轮全程零 proxy restart**：爬前 `/health` 已是 832（新值）+ staleness 行为等价 +
+>    内存 832 == 磁盘 832 ⇒ 三条判据都指向「不需要 restart」（§陷阱 20 再次生效）。
+> ④ **引用链接实网探测（本库独立验证）**：本库 index **无** `url_suffix` 字段（crawler 不写），
+>    裸路径实测 **30/30 = 200** ⇒ proxy 的 `url_suffix_mode: inexbot-open = none` **依然正确**；
+>    姊妹 KB 的 `html` 分派只针对 doc.inexbot.com，**不适用于本库**。**本轮不改 proxy 代码**
+>    （§陷阱 43：兼容层是零成本保险，不因「当前形态能用」就删）。
+
+**上一轮（11-20）快照**见 `references/crawl-state-2026-11-20.md`
 （**832 稳态、连续第 3 天持平**：crawl_state = **IDENTICAL**，
 index.json **2,620,789 bytes** 与 11-18 / 11-19 **逐字节相同**、locale zh=476 / en=178 / kr=178；
 **网络抓取次数 = 0**（日志 `✓` 行数 0、`raw/` 最新 mtime = 11-18 11:03 早于爬取起点）
@@ -758,7 +791,7 @@ journal 按进程切片（PID 2016323）：`Unknown key` 0 / HTTP 500 0 / HTTP 5
 **e2e 探针 12/12 全 200**（44.8–205.9s，**0 次 502/500** → 连续第 15 天 502 计数为 0）；
 姊妹 KB 探针日志用 `/tmp/e2e-<日期>.log`、本 KB 用 `/tmp/e2e-open-<日期>.log` → **本轮无互相覆盖** ✅）。
 
-> 📌 **本轮三个要点**（完整分析见快照 §三、§五、§七）：
+> 📌 **11-20 轮三个要点**（完整分析见该快照 §三、§五、§七）：
 > ① **11-19 那轮因 429 中断而未部署的 proxy 补丁，本轮开跑时已上线** ——
 >    proxy 于 **11-20 11:04:53** 被重启（新 PID **2016323**），带上了 HEAD `b9def11` 的
 >    `url_suffix` 补丁。**本轮全程未对 proxy 做过一次 restart**（§陷阱 20 再次生效）。
@@ -1122,7 +1155,7 @@ curl http://localhost:8643/health   # 确认 docs 数量是新的
 python3 ~/.hermes/skills/productivity/inexbot-open-knowledge-base/scripts/check_proxy_health.py
 ```
 
-会输出两个 KB 的 docs 数、loaded 状态、对比预期基线（inexbot-open = **832**；inexbot = 560；2026-11-18 起更新）。不一致时 exit code = 1，方便 cron 检测失败。同理 `curl .../health` 单独跑、纯 stdout、不带 pipe，也没事。
+会输出两个 KB 的 docs 数、loaded 状态、对比预期基线（inexbot-open = **832**；inexbot = **561**；2026-11-21 起更新）。不一致时 exit code = 1，方便 cron 检测失败。同理 `curl .../health` 单独跑、纯 stdout、不带 pipe，也没事。
 
 > 基线随站点增长而漂移——crawl 跑完后若 docs 数比基线高、且 `/health` 显示 `loaded=True`、三个 locale 都在（zh/en/kr 各自条目数 > 0），属良性增长。判定「真故障」至少要看：
 > 1. docs 数是否**骤降**（如 552 → 100，说明 sidebar 提取挂了）
