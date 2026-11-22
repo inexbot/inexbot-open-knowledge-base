@@ -114,10 +114,20 @@
 | 强制加 `.html` 后缀 | 26/30（4 条 404 —— 目录页等非 `.html` 路由） |
 | 本库 index 里的 `url_suffix` 字段 | **0 条存在**（本库 crawler 不写这个字段） |
 
-⇒ **本库的 `url_suffix_mode = "none"`（proxy 按 KB 分派）依然正确**：
+⇒ **本轮的 `url_suffix_mode = "none"`（proxy 按 KB 分派）依然正确**：
 本库上游用**裸路径路由**，proxy 输出的裸路径 **30/30 全 200**，用户点得到链接。
 ⇒ 姊妹 KB 的 `url_suffix = "html"` 是**针对 doc.inexbot.com 的**分派，**不适用于本库**。
 ⇒ **本轮不改 proxy 代码**（陷阱 43 的处置原则：兼容层是零成本保险，不因「当前形态能用」就删）。
+
+**本轮收尾时把这条一次性探针固化成常驻脚本**（本库此前**没有**这个脚本，
+姊妹 KB 有 ⇒ 照 SKILL.md 的「修 bug 前先看姊妹 KB 是否已修」规则移植）：
+
+| 新增 | 作用 |
+|---|---|
+| `scripts/check_citation_links.py` | 引用链接实网可达性 + `--probe-both-forms` 双形态探测（按**本库** URL 语义移植） |
+| `references/upstream-url-form-drift.md` | 本库视角的 URL 形态漂移专题（姊妹的同名文件写的是 doc 侧「收紧」状态，**对本库不适用**） |
+
+⇒ **下轮 cron 起，引用链接实网检查是标准的第 6c 步**（不再需要手写一次性探针）。
 
 ---
 

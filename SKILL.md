@@ -1,7 +1,7 @@
 ---
 name: inexbot-open-knowledge-base
 description: "纳博特开放平台知识库 RAG：每天定时爬取 open.inexbot.com，由 hermes-skill-proxy 在请求时进行内存检索并注入 system prompt。"
-version: 1.35.0
+version: 1.36.0
 last_verified: 2026-11-21
 author: Hermes Agent
 license: MIT
@@ -771,6 +771,13 @@ journal 按进程切片（PID 2016323，466 行）：`Unknown key` 0 / HTTP 500 
 >    裸路径实测 **30/30 = 200** ⇒ proxy 的 `url_suffix_mode: inexbot-open = none` **依然正确**；
 >    姊妹 KB 的 `html` 分派只针对 doc.inexbot.com，**不适用于本库**。**本轮不改 proxy 代码**
 >    （§陷阱 43：兼容层是零成本保险，不因「当前形态能用」就删）。
+>
+> ⑤ ⚠️ **探测 URL 形态时必须用 `index.json` 的真实条目，别手拼**（姊妹 KB 11-21 实测踩到）：
+>    手拼 `/zh/操作手册` 当普通页 + `.html` → **404**，
+>    而 index 里同名的**真实条目**（`url_suffix=.html`）**两种形态都 200**
+>    ⇒ 手拼会得出「上游还在收紧」的**错误结论**。
+>    **URL 必须从 index.json 取**，再按 `url_suffix` 拼出「带后缀」形态，两种都打一次。
+>    姊妹 KB 完整判别表见其 `references/upstream-url-suffix-routing.md` §0 + 共享 pitfalls §陷阱 43。
 
 **上一轮（11-20）快照**见 `references/crawl-state-2026-11-20.md`
 （**832 稳态、连续第 3 天持平**：crawl_state = **IDENTICAL**，
@@ -1455,6 +1462,25 @@ python3 $SK/scripts/check_proxy_health.py
 > （死代码）⇒ 本库移植时已顺手修好，命中 **93/93**（此前 1/93）。
 > 详见上文「反向查表守卫」一节 + 共享 pitfalls §陷阱 24/25。
 >
+> ⚠️ **第 6c 步（推荐每轮都跑）**：**引用链接实网可达性** ——
+> ```bash
+> /usr/bin/python3 $SK/scripts/check_citation_links.py
+> /usr/bin/python3 $SK/scripts/check_citation_links.py --probe-both-forms   # 判定上游 URL 路由档位
+> ```
+> **为什么它不可省**：**引用链接 404 是一类「表层全绿」的静默故障** ——
+> `/health` 绿灯、检索链路 PASS、索引完整性 PASS、crawler 报「832/832 成功」，
+> **但用户点回答末尾的每个链接都是 404**（共享 pitfalls §陷阱 39）。
+> ⇒ **只有实网打一次链接才抓得到**，其余 8 步全绿也替代不了。
+> 本库版按**本库 URL 语义**移植（明文中文 key → `quote(path, safe="/")`、
+> 裸路径路由、index 里无 `url_suffix` 字段）；姊妹版见其同名脚本。
+> ⚠️ 脚本内置两条硬约束：**cjk 池为空直接 FAIL**（§陷阱 26：别静默退化成全集）
+> + **目录页强制并入样本**（随机抽几乎抽不到，而它们恰是最易写错的那类）。
+>
+> 📌 **本库的 URL 形态漂移专题**（与姊妹 KB 的同名文件**内容不同** ——
+> 姊妹写的是 doc.inexbot.com 的「收紧」状态，**对本库不适用**；
+> 本库走**裸路径路由**，proxy `url_suffix_mode: inexbot-open = "none"`）见
+> **`references/upstream-url-form-drift.md`**。
+>
 > 📌 **第 7 步（可选，但 proxy 的 .py 有改动时必跑）**：判定线上进程是否**行为上**陈旧
 > ```bash
 > python3 $SK/scripts/check_proxy_staleness.py
@@ -1624,6 +1650,43 @@ hermes cron list 2>&1 | grep -A 80 "Last run" | head -120
 **⇒ 根因是「顺序」不是「遗忘」**：把 commit+push 放在「写报告正文」之后，
 一旦在写报告阶段被打断，工作就全部悬空。
 **⇒ 正确顺序：改 → commit → push → 写报告**（报告是最后一步的产物，不是中间步骤）。
+
+#### ✅ **被 429 打断 ≠ 工作没入库 —— 但必须「独立核验」而不是「相信报告」（2026-11-21 实测）**
+
+11-20 那轮以 `HTTP 429 Token Plan 用量上限` 结束。按上面的规则，
+**它的报告正文里的「已提交」结论一律作废** —— 但**这不等于工作真的没入库**：
+只要 commit+push 发生在**写报告正文之前**，被打断时工作**已经在版本库里了**。
+
+**2026-11-21 实测**：11-20 被 429 打断后，本轮独立核验得到
+
+| 核验项 | 结果 |
+|---|---|
+| 本库 `git status -sb` | `## main...origin/main` —— **工作树干净** |
+| `git log --oneline -3` | 顶部是 11-20 的快照 commit `919c25f` |
+| 11-20 快照文件 | **已在版本库**（`git log` 能查到） |
+| 姊妹库 / proxy 库 | 各自状态独立核对 |
+
+⇒ **结论：11-20 那轮实质工作已入库**（顺序正确：改 → commit → push → 写报告）。
+
+**⇒ 本轮该做什么（判读表）**：
+
+| 上一轮状态 | 本轮动作 |
+|---|---|
+| 上一轮带 `error:` **且** 独立核验发现**工作树有未提交改动** | 本轮**补做**那部分工作（改 → commit → push），并在报告里点名「上轮未入库，本轮补齐」 |
+| 上一轮带 `error:` **且** 独立核验发现**工作树干净、commit 已在历史里** | **不必补做** —— 只需在报告里说明「已独立核验，上轮实质工作已入库」 |
+| 上一轮带 `error:` **且** 核验不出来（拿不到 git 状态） | 保守处理：把上轮报告里声称的改动**逐条重做或验证** |
+
+**⇒ 核验命令（与「报告写『遗留：无』前必须 `git status` 核过」同源）**：
+
+```bash
+cd ~/.hermes/skills/productivity/inexbot-open-knowledge-base
+git status -sb          # 工作树干净？
+git log --oneline -3    # 上一轮的 commit 在不在？
+```
+
+> 💡 **通则**：「上一轮被中断」只作废它的**结论**，**不作废磁盘上的事实**。
+> **先核验事实，再决定要不要补做** —— 否则要么重复劳动，要么漏掉真缺口。
+
 
 ### ⚠️ 姊妹 KB 的 cron 会在同窗口 restart proxy → 你的探针可能拿到 `RemoteDisconnected`（2026-10-30）
 
