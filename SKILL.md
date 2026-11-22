@@ -1,8 +1,8 @@
 ---
 name: inexbot-open-knowledge-base
 description: "纳博特开放平台知识库 RAG：每天定时爬取 open.inexbot.com，由 hermes-skill-proxy 在请求时进行内存检索并注入 system prompt。"
-version: 1.36.0
-last_verified: 2026-11-21
+version: 1.37.0
+last_verified: 2026-11-22
 author: Hermes Agent
 license: MIT
 metadata:
@@ -739,45 +739,60 @@ hash-only 输出避免密钥明文与 Hermes 输出脱敏误判；`--units` 同�
 AST 指纹判据的原理、与 `check_proxy_env.py` 的分工、「mtime 太粗」的通用教训）
 见 `references/crawl-state-2026-11-06-assets.md`。
 
-**最新一轮爬取快照**见 `references/crawl-state-2026-11-21.md`
-（**832 稳态、连续第 4 天持平**：crawl_state = **IDENTICAL**，
-index.json **2,620,789 bytes** 与 11-18 / 11-19 / 11-20 **逐字节相同**、locale zh=476 / en=178 / kr=178；
+**最新一轮爬取快照**见 `references/crawl-state-2026-11-22.md`
+（**832 稳态、连续第 5 天持平**：crawl_state = **IDENTICAL**，
+index.json **2,620,789 bytes** 与 11-18 / 11-19 / 11-20 / 11-21 **逐字节相同**、locale zh=476 / en=178 / kr=178；
 **网络抓取次数 = 0**（日志 `✓` 行数 0、`raw/` 最新 mtime = 11-18 11:03 早于爬取起点）
-⇒ **纯本地重抽取，上游零变更**；耗时 **3:56**、md/ 今日改动 0、无 `.tmp` 残留；
+⇒ **纯本地重抽取，上游零变更**；耗时 **4:02.5**、md/ 今日改动 0、无 `.tmp` 残留；
 姊妹 KB **561**；
 **8 步标准序列全绿** —— index_hygiene（零宽 0、空标题 0、幻影 token 可达 0、旧 API 可达 0）/
 retrieval_chain（**静默降级 ==800 = 0**，短正文 4 条 = 伺服报警占位页 61–71 B，属上游本来就短）/
 proxy_health（open **832** + 姊妹 **561**）/ check_proxy_env --units（5 个变量三处 sha12 逐项一致，
 `HERMES_TIMEOUT` sha12=`e49ec846db75` = 1800 ✅）/ check_proxy_staleness（线上 PID **2016323**
 源码 == HEAD `b9def11` → NOT stale，无需 restart）/ check_reload_timer（重载链存活，
-定时器线程 tid=2027591 = 07:05:12 起，下次重载 12:05:12；内存 832 == 磁盘 832 → **已同步**）/
+定时器线程 tid=2037359 = 08:05:26 起，下次重载 13:05:26；内存 832 == 磁盘 832 → **已同步**）/
 md 可达性 **832/832** + 姊妹 561/561；token 级一致性 **PASS**（两个 KB 各 0 处不一致）；
-共享文件结构自检 **OK**（两库各 42 sections）+ `diff_shared_pitfalls.py` **IDENTICAL**
-（sha1 `74ee0c7fd0aa` 两库一致 → 本轮无需同步）；
-journal 按进程切片（PID 2016323，466 行）：`Unknown key` 0 / HTTP 500 0 / HTTP 502 0 /
-`RELOAD FAILED` 0 / `Traceback` 0 / HTTP 200 = 45；
-**e2e 探针 12/12 全 200**（43.1–118.7s，**0 次 502/500** → 连续第 16 天 502 计数为 0）；
-姊妹 KB 探针日志用 `/tmp/e2e-<日期>.log`、本 KB 用 `/tmp/e2e-open-<日期>.log` → **本轮无互相覆盖** ✅）。
+共享文件结构自检 **OK**（两库各 43 sections）；
+journal 按进程切片（PID 2016323，814 行）：`Unknown key` 0 / HTTP 500 0 / HTTP 502 0 /
+`RELOAD FAILED` 0 / `Traceback` 0 / HTTP 200 = 69 / HTTP 404 = 97（**全是外部扫描器**）；
+**e2e 探针 12/12 全 200**（32.5–72.0s，**0 次 502/500** → 连续第 17 天 502 计数为 0）；
+姊妹 KB 探针日志用 `/tmp/e2e-inexbot-<日期>.log`、本 KB 用 `/tmp/e2e-open-<日期>.log` → **本轮无互相覆盖** ✅）。
 
-> 📌 **本轮要点**（完整分析见快照 §三、§五、§七）：
-> ① **11-20 那轮被 HTTP 429 打断 ⇒ 其报告正文的「已提交」结论一律作废**（§陷阱 14 同族规则）。
->    本轮**独立核验**（不信任上一轮报告）：本库 `git status -sb` 干净、11-20 快照**已在版本库**
->    （commit `919c25f`）⇒ 实质工作已入库（提交发生在写报告之前，顺序正确）。
-> ② **SKILL.md 体积仍健康**：**84,121 字符 / 132,792 字节 / 2080 行**
->    → **未顶破 `skill_manage patch` 的 100,000 字符上限**（§陷阱 41 的瘦身手术持续有效，无需再瘦身）。
+> 📌 **本轮要点**（完整分析见快照 §三、§九、§十）：
+> ① 🔴 **11-21 那轮 `Last run` 是 `ok`（无 `error:`），其报告却写着「遗留：无」——
+>    实际有 5 处未入库**（`M SKILL.md` / `M crawl-state-2026-11-21.md` / `M shared-proxy-service-pitfalls.md`
+>    / `?? upstream-url-form-drift.md` / `?? check_citation_links.py`）。
+>    **11-21 快照 §七 明明写了「本轮收尾时固化成常驻脚本」，那两个新文件却从未 `git add`**
+>    ⇒ 下次 `git pull` 会静默丢掉它们。**本轮已补齐并入库（commit `2055270`）**。
+>    ⇒ **新判据（§九）**：**「写报告」不是「工作的最后一步」——「最后一步」是「commit + push」。**
+>    **报告正文里凡是出现「本轮新增了 X / 固化了 Y / 新增了脚本 Z」，就必须核验 X/Y/Z 已在 `git log` 里**
+>    （不是核验「主体工作已入库」，而是**逐个核验报告点名的每一个新增物**）。
+> ② **SKILL.md 体积仍健康**：**88,441 字符 / 140,040 字节 / 2,176 行**
+>    → **未顶破 `skill_manage patch` 的 100,000 字符上限**（距上限还有 11.5 KB 余量，§陷阱 41 的瘦身手术持续有效）。
 > ③ **本轮全程零 proxy restart**：爬前 `/health` 已是 832（新值）+ staleness 行为等价 +
 >    内存 832 == 磁盘 832 ⇒ 三条判据都指向「不需要 restart」（§陷阱 20 再次生效）。
-> ④ **引用链接实网探测（本库独立验证）**：本库 index **无** `url_suffix` 字段（crawler 不写），
->    裸路径实测 **30/30 = 200** ⇒ proxy 的 `url_suffix_mode: inexbot-open = none` **依然正确**；
->    姊妹 KB 的 `html` 分派只针对 doc.inexbot.com，**不适用于本库**。**本轮不改 proxy 代码**
->    （§陷阱 43：兼容层是零成本保险，不因「当前形态能用」就删）。
->
-> ⑤ ⚠️ **探测 URL 形态时必须用 `index.json` 的真实条目，别手拼**（姊妹 KB 11-21 实测踩到）：
+> ④ **引用链接实网探测（第 6c 步，11-21 新脚本首次按标准序列跑）**：抽样 60 条（CJK 池 474，
+>    **池子非空 ⇒ 谓词没退化成全集**）→ **60/60 = 200**、404 = 0；
+>    双形态：裸路径 **30/30 = 200**、带 `.html` 后缀 25/30 ⇒ **本库仍走裸路径路由**，
+>    `url_suffix_mode: inexbot-open = none` **依然正确**，**本轮不改 proxy 代码**（§陷阱 43）。
+> ⑤ ⚠️ **github.com:443 探针「假绿」再现**（§陷阱 30）：socket 探针报 **443 3/3 OK**，
+>    真实 push 却 `GnuTLS recv error (-110)` → 重试 `Failed to connect ... port 443 after 130476 ms`；
+>    ⇒ **切 SSH 通道一次成功**（`6374927..2055270`），并用 `merge-base --is-ancestor` 核验 **IN remote: yes**。
+>    **再次印证**：**「探针通过」≠「真实传输可用」，push 失败后必须复探并立刻切 SSH。**
+> ⑥ ⚠️ **探测 URL 形态时必须用 `index.json` 的真实条目，别手拼**（姊妹 KB 11-21 实测踩到）：
 >    手拼 `/zh/操作手册` 当普通页 + `.html` → **404**，
 >    而 index 里同名的**真实条目**（`url_suffix=.html`）**两种形态都 200**
 >    ⇒ 手拼会得出「上游还在收紧」的**错误结论**。
 >    **URL 必须从 index.json 取**，再按 `url_suffix` 拼出「带后缀」形态，两种都打一次。
 >    姊妹 KB 完整判别表见其 `references/upstream-url-suffix-routing.md` §0 + 共享 pitfalls §陷阱 43。
+
+**上一轮（11-21）快照**见 `references/crawl-state-2026-11-21.md`
+（**832 稳态、连续第 4 天持平**：crawl_state = **IDENTICAL**，
+index.json **2,620,789 bytes** 与 11-18 / 11-19 / 11-20 **逐字节相同**、locale zh=476 / en=178 / kr=178；
+**网络抓取次数 = 0** ⇒ **纯本地重抽取，上游零变更**；耗时 **3:56**；
+姊妹 KB **561**；**8 步标准序列全绿**；
+**e2e 探针 12/12 全 200**（43.1–118.7s → 连续第 16 天 502 计数为 0）；
+**⚠️ 该轮报告写「遗留：无」，但实际有 5 处未入库（详见最新快照 §三）**）。
 
 **上一轮（11-20）快照**见 `references/crawl-state-2026-11-20.md`
 （**832 稳态、连续第 3 天持平**：crawl_state = **IDENTICAL**，
@@ -1796,6 +1811,52 @@ for slug in mod._md_slug_candidates(k):
 > **教训**：这不是「不知道有这个坑」，而是**收尾阶段手松**——
 > 「顺手看一眼」的直觉命令最容易绕过前面刚学到的纪律。
 > ⇒ **写任何 `python3 -c` 之前先想一秒：这是 cron 吗？是 → 立刻改文件路径。**
+
+#### 🔴 **「写报告」不是「工作的最后一步」——「最后一步」是「commit + push」（2026-11-22 实测）**
+
+**这是 §陷阱 14 的「加强版」**：11-21 那轮的 `Last run` 是 **`ok`（无 `error:`）**，
+按 §陷阱 14 的规则其报告结论**本应可信** —— **但它写的「遗留：无」与磁盘事实矛盾**。
+
+**本轮独立核验发现 11-21 实际有 5 处未入库**：
+
+```
+ M SKILL.md
+ M references/crawl-state-2026-11-21.md
+ M references/shared-proxy-service-pitfalls.md
+?? references/upstream-url-form-drift.md        ← 报告点名的新增物
+?? scripts/check_citation_links.py              ← 报告点名的新增物
+```
+
+**11-21 快照 §七 明明写着**「本轮收尾时把这条一次性探针固化成常驻脚本」，
+并列出了那两个文件 —— **但它们从未 `git add`** ⇒ **未入库 ⇒ 下次 `git pull` 会静默丢掉**。
+
+⇒ **根因不是「忘了 commit」，而是「把『收尾时再固化的东西』写进了报告，
+却把固化动作排在了 commit 之后」。**
+
+**✅ 新判据（写入本 SKILL.md，轮次收尾必查）**：
+
+> **报告正文里凡是出现「本轮新增了 X / 本轮固化了 Y / 新增了脚本 Z」，
+> 就必须在本轮结束前核验 X/Y/Z 已在 `git log` 里。**
+> **不是**核验「本轮主体工作已入库」，而是**逐个核验报告点名的每一个新增物**。
+
+**具体做法**：
+
+```bash
+# 1) 写报告时把「新增物」列成一张表
+# 2) commit 之前用 git status --short 对着这张表逐行核（?? = 没入库）
+git status --short
+# 3) commit + push 之后，再核一次远端
+git merge-base --is-ancestor <commit> refs/remotes/sshcheck/main && echo "IN remote"
+```
+
+⇒ **「最后一步」的顺序**：**改 → commit → push → 核验远端 → 写报告**。
+报告正文可以在 commit 之前写（它是产物），但**报告里点名的每个新增物必须先入库**。
+
+> 💡 **通则升级**：§陷阱 14 说「被 429 打断 ⇒ 提交结论作废」；
+> **本条说「就算没被打断（`ok`），报告里的『遗留：无』也不可信 —— 必须独立核验」。**
+> ⇒ **任何一轮的报告结论都要独立核验，不看 `Last run` 是 ok 还是 error。**
+
+> 📌 完整案例见 `references/crawl-state-2026-11-22.md` §三、§九。
 
 ### ⚠️ 共享文件必须在**自己轮次的最后**同步（2026-11-01 实测）——但**不能盲目覆盖**（2026-11-02 修订）
 
