@@ -1,8 +1,8 @@
 ---
 name: inexbot-open-knowledge-base
 description: "纳博特开放平台知识库 RAG：每天定时爬取 open.inexbot.com，由 hermes-skill-proxy 在请求时进行内存检索并注入 system prompt。"
-version: 1.37.0
-last_verified: 2026-11-22
+version: 1.38.0
+last_verified: 2026-11-23
 author: Hermes Agent
 license: MIT
 metadata:
@@ -1522,6 +1522,39 @@ python3 $SK/scripts/check_proxy_health.py
 > 本库走**裸路径路由**，proxy `url_suffix_mode: inexbot-open = "none"`）见
 > **`references/upstream-url-form-drift.md`**。
 >
+> ⭐ **移植姊妹的脚本时，「移植后当场跑一遍」不是可选项（2026-11-23 实测，§陷阱 46）**
+>
+> 本轮把姊妹 KB 11-22 固化的 `scripts/check_url_forms.py` **照搬**进本库。
+> 姊妹那份**恰恰是带 bug 的版本** —— 它 11-22 固化时**没真跑过一次**，
+> 姊妹自己 11-23 首次运行就崩：`PROBE ERROR: ValueError('too many values to unpack (expected 2)')`。
+> ⇒ **本轮 11:02 跑的正是这个脚本**；若不做「移植后立刻跑一遍」，
+> **本库就会连着崩，且 bug 会以「姊妹的成品」的名义潜伏**。
+>
+> **✅ 移植纪律（三步，缺一不可）**：
+>
+> 1. **移植后立刻跑一次** —— 且看**末尾的判定行**（如 `VERDICT: ...`），
+>    不是头部统计行（一个在 60% 处崩的探针会先打印一屏漂亮的统计）。
+> 2. **比对 sha1** —— 与姊妹当前版本一致才说明拿到的是**修复后**的版本。
+>    本轮实测：姊妹修复后 sha1 = `5041d0e93887`，两库一致。
+> 3. **判「是否 KB 无关可移植」**：脚本若用 `--kb` 分派 + 读
+>    `~/.hermes/kb/<name>/index.json` ⇒ **无 KB 专属硬编码 ⇒ 可移植**；
+>    若含 `if kb == "inexbot":` 之类的分支 ⇒ 需改。
+>
+> > 💡 **姊妹的成品 ≠ 可用的成品。** 姊妹 KB 自己的 cron 与本 cron 同窗口跑，
+> > 姊妹那边「刚固化 / 刚修 bug」的状态**可能还没被任何人验证过**。
+> > ⇒ **凡是「从姊妹那边拿过来」的东西，都要当未经测试的第三方代码对待。**
+>
+> ⭐ **共享脚本的同步方向不能套「姊妹独有行 = 0」判据（§陷阱 23 的例外）**
+>
+> §陷阱 23 的「姊妹独有行 = 0 ⇒ 直接 cp 覆盖」对**共享文档**成立，
+> 对**共享脚本**会**误判**：脚本在被同步时**本来就会两边不同**
+> （我方在修 bug，姊妹还是旧版）⇒ 差集必然非 0 ⇒ 按字面判据得到「不能覆盖」的
+> **错误结论** ⇒ bug 修复只留在一个 KB，**而两边跑的是同一个 proxy**。
+> ⇒ 对**脚本**改用「**变化行是否全部与本次改动相关**」判定；
+> 对**文档**才用「姊妹独有行 = 0」。完整方法 + 代码见
+> `references/cron-completion-discipline.md`「同步共享脚本到姊妹 KB」一节。
+
+>
 > 📌 **第 6d 步（可选，2026-11-23 移植姊妹的 KB 无关探针）**：三形态实网探测 ——
 > ```bash
 > /usr/bin/python3 $SK/scripts/check_url_forms.py --sample 40
@@ -1904,6 +1937,47 @@ git merge-base --is-ancestor <commit> refs/remotes/sshcheck/main && echo "IN rem
 > **本条说「就算没被打断（`ok`），报告里的『遗留：无』也不可信 —— 必须独立核验」。**
 > ⇒ **任何一轮的报告结论都要独立核验，不看 `Last run` 是 ok 还是 error。**
 
+#### 🔴 **§陷阱 44 在本库再次复现（2026-11-23 实测）—— 升级为「轮次第 0 步硬动作」**
+
+**11-22 那轮 `Last run = ok`（无 `error:`），报告写「遗留：无」，独立核验实测有 2 处未入库**：
+
+```
+ M SKILL.md                                        ← 上一轮点名的「§陷阱 44」新增段
+ M references/shared-proxy-service-pitfalls.md      ← 上一轮点名的「§陷阱 44」新增 section
+```
+
+⇒ **上一轮自己写进报告的「新增物」，恰恰就是它没入库的东西**（根因：新增物排在 commit 之后）。
+⇒ **本库已连续两轮（11-21、11-22）踩同一个坑** ⇒ 这不是偶发，是**结构性缺陷**。
+
+**⇒ 轮次第 0 步（读完上一轮待办之后）必须先跑的三条**：
+
+```bash
+cd ~/.hermes/skills/productivity/inexbot-open-knowledge-base
+git status -sb          # ① 工作树脏不脏？脏 ⇒ 上一轮有东西没入库
+git log --oneline -3    # ② 上一轮的 commit 在不在历史里？
+git ls-files --others --exclude-standard   # ③ 有没有「报告点名但从没 add」的新增物
+```
+
+**⇒ 收尾（第 7 步）必须逐个核验「报告点名的每个新增物」**，而不是只看「主体工作已入库」：
+
+```bash
+for f in <报告点名的每个新增物>; do
+  git cat-file -e <commit>:$f 2>/dev/null && echo "OK  $f" || echo "FAIL $f"
+done
+git status --short                              # 必须为空
+git ls-files --others --exclude-standard         # 必须为空（无未跟踪）
+git merge-base --is-ancestor <commit> refs/remotes/sshcheck/main && echo "IN remote"
+```
+
+> 💡 **这条比 §陷阱 14 强**：陷阱 14 的前提是「上一轮带 `error:`」，
+> **本条的前提是「上一轮根本没被打断」** —— 后者更危险，因为**没有任何信号提示你要去查**。
+> ⇒ **唯一可靠的做法是把它固化成「第 0 步无条件执行的三条命令」**，而不是「看情况查」。
+>
+> 📌 **本 skill 自身的更新记录**（每轮改了 SKILL.md / references 的条目清单与依据）见
+> **`references/crawl-state-2026-11-23-skill-updates.md`** ——
+> 含「§陷阱 44 连续两轮复现 ⇒ 固化成第 0 步硬动作」与
+> 「从姊妹 KB 移植脚本时，bug 可能就在你复制的那一份里」（§陷阱 46 补充）两处的完整推理。
+>
 > 📌 完整案例见 `references/crawl-state-2026-11-22.md` §三、§九。
 
 ### ⚠️ 共享文件必须在**自己轮次的最后**同步（2026-11-01 实测）——但**不能盲目覆盖**（2026-11-02 修订）

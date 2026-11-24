@@ -175,6 +175,65 @@ sha1sum <our>/scripts/check_url_forms.py <sister>/scripts/check_url_forms.py
 - ✅ 要写就写具体清单：哪些提交了（commit hash）、哪些**故意没提交**（及原因）
 - ✅ 姊妹 KB 仓库的未提交改动 → 明确写「**非本 skill 职责，未代提交**」
 
+## 🔴 轮次第 0 步：**无条件**核验上一轮的入库状态（2026-11-23 实测）
+
+> ⚠️ **这是 §陷阱 44 在本库连续两轮（11-21、11-22）复现后固化的动作。**
+> 11-21 那轮有 **5 处**未入库；11-22 那轮有 **2 处**未入库。
+> **两轮的 `Last run` 都是 `ok`** ⇒ **没有任何信号提示你要去查**。
+
+### 为什么「看情况查」不管用
+
+| 上一轮状态 | 有没有信号提示 | 该不该查 |
+|---|---|---|
+| 带 `error:`（429 / 超时 / 工具上限） | ✅ 有 | ✅ 必须查 |
+| **`ok`（根本没被打断）** | ❌ **没有** | ✅ **更要查** |
+| `ok` 且报告写「遗留：无」 | ❌ **没有** | ✅ **最要查** |
+
+⇒ **唯一可靠的做法：把它固化成「第 0 步无条件执行的三条命令」**，而不是「看情况查」。
+
+### 第 0 步：三条命令（读上一轮待办之后、动手之前）
+
+```bash
+cd ~/.hermes/skills/productivity/inexbot-open-knowledge-base
+git status -sb          # ① 工作树脏不脏？脏 ⇒ 上一轮有东西没入库
+git log --oneline -3    # ② 上一轮的 commit 在不在历史里？
+git ls-files --others --exclude-standard   # ③ 有没有「报告点名但从没 add」的新增物
+```
+
+**判读**：
+
+| 观测 | 结论 | 动作 |
+|---|---|---|
+| 工作树干净 + 上轮 commit 在 `git log` 里 | 上轮实质工作**已入库** | 正常继续，报告里说明「已独立核验」 |
+| 工作树**脏**（有 `M` / `??` 的代码或文档） | 上轮**有未入库工作** | **本轮补做**那部分（改 → commit → push），报告里点名「上轮未入库，本轮补齐」 |
+| 拿不到 git 状态 | 核验不出来 | **保守处理**：把上轮报告里声称的改动**逐条重做或验证** |
+
+### 收尾：逐个核验「报告点名的每个新增物」
+
+**不是**核验「本轮主体工作已入库」，而是**逐个核验报告里出现的每一个新增物**：
+
+```bash
+for f in <报告点名的每个新增物>; do
+  git cat-file -e <commit>:$f 2>/dev/null && echo "OK  $f" || echo "FAIL $f"
+done
+git status --short                              # 必须为空
+git ls-files --others --exclude-standard         # 必须为空（无未跟踪）
+git merge-base --is-ancestor <commit> refs/remotes/sshcheck/main && echo "IN remote"
+```
+
+2026-11-23 实测：7 个新增/修改物**逐个 `git cat-file -e` 通过**，
+`git status` 干净、无未跟踪、`merge-base --is-ancestor` → **IN remote: YES**。
+
+### ⚠️ 反面案例（本库 11-22 那一轮的写法）
+
+```bash
+# ❌ 只核验「主体工作已入库」，漏掉了报告自己点名的 2 个新增物
+git log --oneline -3        # 看到 11-21 的快照 commit 在 → 以为「已入库」→ 报告写「遗留：无」
+# ⇒ 实际 SKILL.md 的 §陷阱 44 段、shared pitfalls 的 §陷阱 44 section 都没入库
+```
+
+⇒ **看到 commit 在 ≠ 看到所有新增物在。**
+
 ## 通则：cron 的「完成」= 磁盘改完 **且** 已入库
 
 这两个是不同的状态：
