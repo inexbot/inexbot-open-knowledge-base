@@ -763,6 +763,7 @@ URL→index-key 反查 **93/93**、引用链接实网 **60/60 可达**、URL 形
 共享文件结构自检 **OK**（两库各 46 sections）；
 journal 按进程切片（PID 2016323）：`Unknown key` 0 / HTTP 500 0 / HTTP 502 0 /
 `RELOAD FAILED` 0 / `Traceback` 0 / HTTP 200 = 134 / HTTP 404 = 116（**全是外部扫描器**）；
+**e2e 探针 12/12 全 200**（45.4–679.5s，**0 次 502/500** → 连续第 19 天 502 计数为 0）；
 姊妹 KB 探针日志用 `/tmp/e2e-inexbot-<日期>.log`、本 KB 用 `/tmp/e2e-open-<日期>.log` → **本轮无互相覆盖** ✅）。
 
 > 📌 **本轮要点**（完整分析见快照 §三、§五）：
