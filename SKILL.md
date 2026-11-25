@@ -1,7 +1,7 @@
 ---
 name: inexbot-open-knowledge-base
 description: "纳博特开放平台知识库 RAG：每天定时爬取 open.inexbot.com，由 hermes-skill-proxy 在请求时进行内存检索并注入 system prompt。"
-version: 1.39.0
+version: 1.40.0
 last_verified: 2026-11-24
 author: Hermes Agent
 license: MIT
@@ -1929,6 +1929,17 @@ git merge-base --is-ancestor <commit> refs/remotes/sshcheck/main && echo "IN rem
 > **本条的前提是「上一轮根本没被打断」** —— 后者更危险，因为**没有任何信号提示你要去查**。
 > ⇒ **唯一可靠的做法是把它固化成「第 0 步无条件执行的三条命令」**，而不是「看情况查」。
 >
+> 🔴 **2026-11-24：已连续三轮复现**（11-21 的 5 处 / 11-22 的 2 处 / **11-23 的 4 处**），
+> 三轮的 `Last run` **全是 `ok`** ⇒ **「记住要 commit」不可能根治**。
+> ⭐ **机制找到了**：`git add -u`（及 `git commit -a`）**只暂存已跟踪文件的修改，
+> 不碰未跟踪文件** ⇒ 报告点名的 `??` 新增物**每轮都被漏掉**。
+> ⇒ **收尾一律用 `git add -A`**；核验时 `git ls-files --others --exclude-standard`
+> **必须为空**（这一步专门抓「新增物漏 add」）。
+> ⭐ **另**：姊妹 KB 会**主动吸收**我们的超集（共享文件双向流动）⇒
+> **「姊妹比我新」不等于「该 cp 覆盖」**，唯一判据仍是「独有行集合」（§陷阱 23）。
+> 完整推导、逐条核验清单、姊妹吸收超集的判读表见
+> **`references/cron-completion-discipline.md`**。
+>
 > 📌 **本 skill 自身的更新记录**（每轮改了 SKILL.md / references 的条目清单与依据）见
 > **`references/crawl-state-2026-11-23-skill-updates.md`** ——
 > 含「§陷阱 44 连续两轮复现 ⇒ 固化成第 0 步硬动作」与
@@ -2048,6 +2059,16 @@ sha1sum ~/.hermes/skills/productivity/{inexbot,inexbot-open}-knowledge-base/refe
 
 > 📌 **规则：共享文件的同步动作放在自己轮次的**最后一步**，commit 之前。
 > 中途同步一次只是「当时的快照」，不保证是最新的。
+>
+> ⭐ **2026-11-24 新发现：共享文件是「双向流动」的** —— 谁先 `commit` + `push`，
+> 另一方的 cron 就会读到并回写。11-24 本轮**开跑时**姊妹那份已与本库**完全一致**
+> （两库 sha1 归一 `9799e49f39bb4c895d06f5ac818c365f939c9fc9`、均 2494 行 / 46 sections），
+> 且姊妹吸收的正是本库 **11-23 轮末**才写进去的内容。
+> ⇒ **推论：「姊妹那份看起来更新/更全」不等于「该 cp 覆盖」** ——
+> 本轮开跑时两边是**同一天的新内容**，差别只在**谁先落盘**。
+> ⇒ **唯一判据仍是「独有行集合」**（本轮实测：姊妹独有行 **0** / 本 skill 独有行 **39**
+> ⇒ **我们是超集，保留我们的**，一字未改）。
+> 完整判读表见 `references/cron-completion-discipline.md`「姊妹 KB 会主动吸收我们的超集」。
 >
 > ⚠️ 姊妹 KB 那份**还会继续长**（姊妹自己在迭代它）——本 skill 不要去改它，
 > 只做**单向或反向补齐**，不主动重写。
