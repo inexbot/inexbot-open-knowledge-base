@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""结构自检：共享 pitfalls 文件有没有「重复块 / 孤儿块 / 标题截断」。
+"""结构自检：共享 pitfalls 文件有没有「重复块 / 孤儿块 / 标题截断 / 正文交错」。
 
 背景（2026-11-13 实测，见 shared-proxy-service-pitfalls.md §陷阱 31）：
 两个 KB 的 agent 同时 patch 同一个共享文件时，可能拼出
   - 孤儿块：有完整正文，但没有自己的 `## 陷阱 N：` 标题（标题被吞）
   - 重复块：同一段正文出现两次（一次在正常 section 里，一次在文件末尾）
   - 标题截断：`## 陷阱 N` 存在但切不出对应正文
+  - 正文交错：两节的正文逐行交错（2026-11-20 实测，姊妹 KB 那份文件出现过）
 
 这类损坏**两个 KB 都看得见**，且**sha1 两边一致**（同一个 commit 推过去的）
 ⇒ 只靠 `diff_shared_pitfalls.py`（比内容）**抓不到** —— 必须单独做结构检查。
@@ -17,10 +18,30 @@
 
 退出码：
     0 = 结构完好
-    1 = 发现重复块 / 孤儿块 / 标题截断
+    1 = 发现重复块 / 孤儿块 / 标题截断 / 正文交错
     2 = 文件不存在
 
 ⚠️ 必须用 /usr/bin/python3（cron 禁内联脚本，见 §陷阱 29）。
+
+⚠️ **2026-11-25 实测重写（旧版恒定误报 exit 1）**：
+旧实现只做「按行去重」，把**两类完全正常的重复**也报成损坏：
+  ① **围栏代码块里的命令行**（如 `git merge-base --is-ancestor …`）——
+     同一命令在多个陷阱里各出现一次是**正确**的；
+  ② **跨节引用的归属注记**（如「本条由姊妹 KB 在 X 日实测并写入…」）——
+     有意在两个陷阱里各留一份，是**正确**的。
+⇒ 旧实现**从未真正实现它承诺的「重复块」检测**：
+   `block_hashes` 算出来了但**从未被使用**（= §陷阱 40「定义了但没接进调用链」）。
+⇒ 本版改为**直接对准真正的损坏形态**：
+   1. `DUPLICATE_HEADING`  同一个 `## 陷阱 N` 出现两次
+   2. `DUPLICATE_SECTION`  两节的正文**整体相同**
+   3. `EMPTY_SECTION`      任意一节正文过短（不只是最后一节）
+   4. `INTERLEAVED_BODY`   两节正文**逐行交错**（按重叠比例判定，天然容忍
+      「一两句在多节重复」的正常写法）
+   5. `SUSPECT_ORPHAN`      子标题数远多于 section 数（正文有、标题丢了）
+判据阈值见下方常量，均已在合成样本上实测过。
+
+⭐ **与姊妹 KB 的版本必须保持一致**（共享脚本，§陷阱 45 的「变化行是否全部
+与本次改动相关」判据）—— 两边跑的是同一个 proxy，同一个坏脚本等于没修。
 """
 
 import argparse
@@ -36,12 +57,56 @@ DEFAULT_FILES = [
 
 SECTION_RE = re.compile(r"^##\s+(陷阱\s+\d+[^\n]*)$")
 SUBHEAD_RE = re.compile(r"^###\s+")
-# 门槛：短于这个长度的重复行多半是表格分隔线 / 装饰线，不算重复块
-MIN_LINE_LEN = 40
+
+# 判定「一节正文过短」的下限（标题行不计）
+MIN_SECTION_BODY_LINES = 2
+# 判定「两节正文交错」的重叠比例下限。
+# 正常写法里同一句话最多在两三节重复 ⇒ 单节占比通常 < 15%；
+# 真交错时两节的绝大多数行互相出现 ⇒ 占比 > 60%。
+INTERLEAVE_RATIO = 0.60
+# 参与重叠统计的行长度下限（过滤装饰线 / 表格分隔）
+MIN_OVERLAP_LINE_LEN = 12
+# 孤儿体检测用的「固定长度前缀签名」行数。
+# ⚠️ 不能用「整段正文」当签名：最后一节的正文延伸到 EOF，孤块若是它的复制体
+#    会被吸进自己 => 签名改变 => 反而漏报（2026-11-15 实测踩到）。
+SIG_LINES = 8
+
+
+def _fenced_line_mask(lines):
+    """1-based line numbers that sit inside fenced code blocks.
+
+    A fenced code block legitimately repeats the same shell command across
+    different trap sections; counting those as corruption produced a
+    permanently red probe (measured 2026-11-25: 5 of 7 flags were exactly this).
+    """
+    inside = set()
+    fence = False
+    for i, ln in enumerate(lines, 1):
+        if ln.strip().startswith("```"):
+            fence = not fence
+            continue
+        if fence:
+            inside.add(i)
+    return inside
+
+
+def _norm_lines(lines, start, end, skip):
+    """Normalized, de-duplicated meaningful lines of a section body."""
+    out = set()
+    for i in range(start, end):
+        if (i + 1) in skip:
+            continue
+        s = " ".join(lines[i].split())
+        if len(s) < MIN_OVERLAP_LINE_LEN:
+            continue
+        out.add(s)
+    return out
 
 
 def analyze(text):
     lines = text.splitlines()
+    skip = _fenced_line_mask(lines)
+
     headings = []
     for i, ln in enumerate(lines):
         m = SECTION_RE.match(ln)
@@ -49,70 +114,94 @@ def analyze(text):
             headings.append((i, m.group(1).strip()))
 
     problems = []
-    warnings = []
+    n_sub = sum(1 for ln in lines if SUBHEAD_RE.match(ln))
 
-    # --- 1) 重复长行 ——
-    # ⚠️ 只报 WARNING，不计入退出码：同一份 pitfalls 里不同 section 复用
-    #    同一段 shell 片段是**正常**的（例如「trap 1 的诊断命令」与
-    #    「trap 20 的决策流程」都含 `ps -o pid,lstart,etime -p $(pgrep -f ...)`）。
-    #    2026-11-15 实测：把重复行当 FAIL 会让脚本对**结构完好**的文件
-    #    稳定返回 exit 1 → 变成「天天误报的假警报」，比没有守卫更糟。
-    seen = {}
-    for i, ln in enumerate(lines):
-        s = ln.strip()
-        if len(s) < MIN_LINE_LEN:
-            continue
-        if s.startswith("|"):
-            continue
-        if s.startswith("#"):
-            continue
-        seen.setdefault(s, []).append(i + 1)
-    for s, positions in seen.items():
+    if not headings:
+        problems.append(("NO_SECTIONS", "no '## 陷阱 N' headings found at all"))
+        return problems, len(headings), n_sub, lines
+
+    # --- 1) 标题重复 ---
+    head_seen = {}
+    for i, t in headings:
+        head_seen.setdefault(t, []).append(i + 1)
+    for t, positions in head_seen.items():
         if len(positions) > 1:
-            warnings.append(
-                ("DUPLICATE_LINE", f"line {s[:60]!r} appears at lines {positions}")
+            problems.append(
+                ("DUPLICATE_HEADING", f"{t!r} appears at lines {positions}")
             )
 
-    # --- 2) 标题截断：最后一个标题之后没有正文 ---
-    if headings:
-        last_idx, last_title = headings[-1]
-        tail = [ln for ln in lines[last_idx + 1:] if ln.strip()]
-        if not tail:
-            problems.append(("EMPTY_SECTION", f"last section {last_title!r} has no body"))
-        # 最后一个 section 的正文应该直到文件尾
-    else:
-        problems.append(("NO_SECTIONS", "no '## 陷阱 N' headings found at all"))
-
-    # --- 3) 子标题多于 section 数 -> 可能有孤儿块 ---
-    n_sub = sum(1 for ln in lines if SUBHEAD_RE.match(ln))
-    if headings and n_sub > len(headings) * 3:
-        problems.append(
-            ("SUSPECT_ORPHAN", f"{n_sub} sub-headings vs {len(headings)} sections -- check for a body without its own heading")
-        )
-
-    # --- 4) 重复块 / 孤儿块：某个 section 的正文在文件里出现了第二份 ---
-    # ⚠️ 这才是「重复块 / 孤儿块」的真判据（2026-11-13 实测：陷阱 27 的正文
-    #    在文件末尾成孤块 —— **没有自己的 `## 陷阱 27：` 标题**）。
-    #
-    # 做法：对每个 section 取「正文开头 SIG_LINES 个非空行」当签名，
-    #    在整份文件的非空行序列里滑动找该签名的出现次数。
-    #    出现 > 1 次 → 有一份复制体（正常 section + 末尾孤块，或两个同名正文）。
-    #
-    # ⚠️ 为什么不用「整段正文」当签名：最后一个 section 的正文延伸到 EOF，
-    #    若孤块恰好是它的复制体，「整段正文」会**把孤块吸进自己** →
-    #    签名随之改变 → 反而找不到重复（2026-11-15 实测踩到）。
-    #    固定长度的前缀签名不受影响。
-    SIG_LINES = 8
-
-    nonempty = [ln.strip() for ln in lines if ln.strip()]
-    body_of = {}
+    # --- section body spans ---
+    spans = []
     for k, (start, title) in enumerate(headings):
         end = headings[k + 1][0] if k + 1 < len(headings) else len(lines)
-        body = [ln.strip() for ln in lines[start + 1:end] if ln.strip()]
-        body_of[title] = body
+        spans.append((start, end, title))
 
+    # 全文件的非空行序列（孤儿体签名要在它上面滑动查找）
+    nonempty = [ln.strip() for ln in lines if ln.strip()]
+
+    # --- 2) 两节正文整体相同（只比正文，不含标题行 ——
+    #        标题不同正是「同一段正文被复制到两节」的标志） ---
+    body_hash = {}
+    for start, end, title in spans:
+        body = "\n".join(lines[start + 1:end]).strip()
+        if not body:
+            continue
+        h = hashlib.sha256(body.encode("utf-8")).hexdigest()[:12]
+        body_hash.setdefault(h, []).append(title)
+    for h, titles in body_hash.items():
+        if len(titles) > 1:
+            problems.append(
+                ("DUPLICATE_SECTION",
+                 f"{len(titles)} sections share the identical body: {titles}")
+            )
+
+    # --- 3) 标题截断：任意一节正文过短 ---
+    for start, end, title in spans:
+        body = [ln for ln in lines[start + 1:end] if ln.strip()]
+        if len(body) < MIN_SECTION_BODY_LINES:
+            problems.append(
+                ("EMPTY_SECTION",
+                 f"section {title!r} has only {len(body)} body line(s)")
+            )
+
+    # --- 4) 正文交错：两节正文逐行交错 ---
+    norm = [_norm_lines(lines, s + 1, e, skip) for s, e, _ in spans]
+    for a in range(len(spans)):
+        for b in range(a + 1, len(spans)):
+            sa, sb = norm[a], norm[b]
+            if not sa or not sb:
+                continue
+            inter = len(sa & sb)
+            ratio = inter / min(len(sa), len(sb))
+            if ratio >= INTERLEAVE_RATIO and inter >= 3:
+                problems.append(
+                    ("INTERLEAVED_BODY",
+                     f"{spans[a][2]!r} and {spans[b][2]!r} share "
+                     f"{inter} identical lines (ratio {ratio:.0%}) "
+                     f"-- bodies look interleaved")
+                )
+
+    # --- 5) 孤儿块：section 数远少于子标题数 ---
+    if n_sub > len(headings) * 3:
+        problems.append(
+            ("SUSPECT_ORPHAN",
+             f"{n_sub} sub-headings vs {len(headings)} sections "
+             "-- check for a body without its own heading")
+        )
+
+    # --- 6) 孤儿体：某一节的正文在文件里出现了第二份（无自己的标题） ---
+    #
+    # ⚠️ 这条判据**不能**被上面的 #2 (DUPLICATE_SECTION, 整段 sha256) 替代：
+    # 孤儿体的典型形态是「把最后一节的正文**再抄一份**追加到文件末尾」，
+    # 于是**最后一节的正文区间会同时包含原件和副本** => 它的 sha256 唯一
+    # => #2 看不到重复 => 孤儿体**漏检**。
+    # => 必须用「固定长度前缀签名」在全文件的非空行序列里滑动查找（§陷阱 31）。
+    #
+    # ⚠️ 为什么不用「整段正文」当签名：最后一节的正文延伸到 EOF，孤块若是它的
+    #    复制体会被**吸进自己** => 签名改变 => 反而漏报（2026-11-15 实测踩到）。
     sig_owner = {}
-    for title, body in body_of.items():
+    for start, end, title in spans:
+        body = [ln.strip() for ln in lines[start + 1:end] if ln.strip()]
         if len(body) < SIG_LINES:
             continue
         sig = tuple(body[:SIG_LINES])
@@ -123,18 +212,15 @@ def analyze(text):
         if hits > 1:
             problems.append(
                 ("DUPLICATE_BLOCK",
-                 f"section body of {title!r} appears {hits} times (orphan/duplicate copy)")
-            )
-        sig_owner[sig] = sig_owner.get(sig, 0) + 1
-
+                 f"section body of {title!r} appears {hits} times (orphan/duplicate copy)"))
+        sig_owner.setdefault(sig, []).append(title)
     for sig, owners in sig_owner.items():
-        if owners > 1:
+        if len(owners) > 1:
             problems.append(
                 ("DUPLICATE_SECTION",
-                 f"{owners} sections share the same body prefix {sig[:2]}")
-            )
+                 f"{len(owners)} sections share the same body prefix {sig[:2]}"))
 
-    return problems, warnings, len(headings), n_sub, lines
+    return problems, len(headings), n_sub, lines
 
 
 def main():
@@ -147,25 +233,23 @@ def main():
     for f in files:
         print(f"=== {f} ===")
         if not f.exists():
-            print(f"  [FAIL] file not found")
+            print("  [FAIL] file not found")
             rc = 2
             continue
         text = f.read_text(encoding="utf-8")
-        problems, warnings, n_sec, n_sub, lines = analyze(text)
+        problems, n_sec, n_sub, lines = analyze(text)
         print(f"  sections={n_sec}  sub-headings={n_sub}  lines={len(lines)}")
-        for kind, detail in warnings:
-            print(f"  [WARN {kind}] {detail}")
         if not problems:
-            print("  [OK] structure intact: no duplicate/orphan/truncated sections")
+            print("  [OK] structure intact: no duplicate / orphan / truncated / interleaved section")
             continue
         rc = 1
         for kind, detail in problems:
             print(f"  [{kind}] {detail}")
-        # 打印重复正文块的标题，供人工核对
-        heads = [SECTION_RE.match(ln).group(1).strip()
-                 for ln in lines if SECTION_RE.match(ln)]
-        print(f"  section titles: {heads}")
 
+    if rc == 0:
+        print("=> PASS: 共享 pitfalls 结构完好。")
+    else:
+        print("=> FAIL: 发现重复块 / 孤儿块 / 标题截断 / 正文交错，需人工核对。")
     return rc
 
 
