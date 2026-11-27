@@ -35,7 +35,11 @@ TIMEOUT = 5  # seconds
 # 799 (2026-10-18/19/21/22; four consecutive flat cycles, index.json byte-identical
 # since 10-19 — the zh sidebar +2/cycle growth has fully stopped).
 BASELINES = {
-    "inexbot-open": 832,   # +15 on 2026-11-18 (zh 461->476: 17 new pages fetched, minus 2 upstream renames); flat since
+    # +112 on 2026-11-27: upstream restructured 05.JSON-协议 --
+    #   04.dev-rt (73) renamed to 05.dev-rt (72) AND a new 04.dev-wk section (83)
+    #   appeared; zh 476 -> 588. 187 real network fetches (first non-zero since 11-18).
+    #   832 was the flat baseline 11-18 -> 11-26 (9 consecutive identical cycles).
+    "inexbot-open": 944,
     "inexbot":       562,  # doc.inexbot.com (sister KB); grew 547 → 557 → 558 → 560 → 561 (11-19) → 562 (2026-11-25)
 }
 
