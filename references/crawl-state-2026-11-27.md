@@ -114,7 +114,7 @@ SKILL.md 里记的改名盲区（2026-10-23）是「**zh 路径变了、en/kr �
 | `check_crawl_state.py` | **CHANGED: 832 → 944 docs**（3,123,265 bytes，zh 588 / en 178 / kr 178） |
 | `check_index_hygiene.py` | 零宽 **0**、空标题 **0**、空 snippet **34**（上游空目录页，正常）；幻影 token `cppset_tool_hand_number` 可达 **0**；旧 API `star_servo_...` 可达 **0** |
 | `check_retrieval_chain.py` | **静默降级(==800) = 0**、异常 False；短正文 4 条 = 伺服报警占位页（61–71 B，属上游本来就短） |
-| `check_proxy_health.py` | `inexbot-open` **832**（内存尚未重载）/ 姊妹 **562**；基线已 patch 到 **944** |
+| `check_proxy_health.py` | `inexbot-open` **832**（内存尚未重载）/ 姊妹 **562**；判据已改为 **floor + target** 双阈值（floor=832 / 磁盘=944）⇒ **不再把「内存落后于磁盘」误报成故障**（原先把 baseline patch 到 944 会一直红到下次重载） |
 | `check_proxy_env.py --units` | 5 个变量三处 sha12 **逐项一致**；`HERMES_TIMEOUT` sha12=`e49ec846db75`（=1800）✅ |
 | `check_proxy_staleness.py` | 线上 PID **2016323**（11-20 11:04:53 起）源码 == HEAD `b9def11` → **NOT stale，无需 restart** |
 | `check_reload_timer.py` | 重载链**存活**（tid=2089395，08:06:34 触发）；内存 832 != 磁盘 944 → **正常重载窗口**；下次自动重载 **13:06:34** |

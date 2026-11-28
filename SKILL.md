@@ -513,8 +513,11 @@ curl http://localhost:8643/health
 > ⚠️ **注意内存/磁盘的时差**：proxy 每 5h 自动重载索引 ⇒ 爬完的那一刻
 > `/health` 仍显示**旧值**（本轮：磁盘 944 / 内存 832，下次自动重载 13:06:34）。
 > **这是正常重载窗口，不是故障** —— 判据看 `check_reload_timer.py` 是否报 `[FAIL]`。
-> `check_proxy_health.py` 的基线已 patch 到 **944** ⇒ 内存尚未重载时它会报 `DIFF`/exit 1，
-> **属于预期**，不要据此判故障。
+> ⚠️ **`check_proxy_health.py` 的基线不要往上 patch 到新值**：它判的是 `docs >= baseline`，
+> patch 上去后「内存还没重载」就会被误报成故障（exit 1）且**会一直红到下次重载**（最长 5h）
+> ⇒ 真故障被淹没（§陷阱 47 的镜像）。**正确做法是 floor + target 双阈值**
+> （floor = 上一个 known-good 值，target = 磁盘值），细节与回归脚本见
+> **`references/proxy-health-baseline-semantics.md`**。
 
 ```json
 {"status":"ok","indexes":{"inexbot":{"docs":562,"loaded":true},"inexbot-open":{"docs":944,"loaded":true}}}
@@ -1142,7 +1145,17 @@ curl http://localhost:8643/health   # 确认 docs 数量是新的
 python3 ~/.hermes/skills/productivity/inexbot-open-knowledge-base/scripts/check_proxy_health.py
 ```
 
-会输出两个 KB 的 docs 数、loaded 状态、对比预期基线（inexbot-open = **832**；inexbot = **562**；2026-11-25 起更新）。不一致时 exit code = 1，方便 cron 检测失败。同理 `curl .../health` 单独跑、纯 stdout、不带 pipe，也没事。
+会输出两个 KB 的 docs 数、loaded 状态、对比预期基线（inexbot-open floor = **832**；
+inexbot = **562**；2026-11-27 起改为 **floor + target** 双阈值判据 ——
+「内存落后于磁盘」是**正常重载窗口**，不再报 DIFF）。不一致时 exit code = 1，
+方便 cron 检测失败。同理 `curl .../health` 单独跑、纯 stdout、不带 pipe，也没事。
+
+> ⭐ **判据用 floor + target 两个数，不要用「单一 baseline + 往上 patch」** ——
+> 否则每次 KB 增长后都会在重载窗口内误报故障并**一直红到下次自动重载**（最长 5h），
+> 真故障被淹没（§陷阱 47 的镜像：恒绿同样无用）。
+> 完整推导 + **5 个合成样本的回归脚本**见
+> **`references/proxy-health-baseline-semantics.md`**
+> 与 **`scripts/test_proxy_health_regression.py`**。
 
 > 基线随站点增长而漂移——crawl 跑完后若 docs 数比基线高、且 `/health` 显示 `loaded=True`、三个 locale 都在（zh/en/kr 各自条目数 > 0），属良性增长。判定「真故障」至少要看：
 > 1. docs 数是否**骤降**（如 552 → 100，说明 sidebar 提取挂了）
@@ -1913,38 +1926,38 @@ git merge-base --is-ancestor <commit> refs/remotes/sshcheck/main && echo "IN rem
 > **本条说「就算没被打断（`ok`），报告里的『遗留：无』也不可信 —— 必须独立核验」。**
 > ⇒ **任何一轮的报告结论都要独立核验，不看 `Last run` 是 ok 还是 error。**
 
-#### 🔴 **§陷阱 44 在本库再次复现（2026-11-23 实测）—— 升级为「轮次第 0 步硬动作」**
-
-**11-22 那轮 `Last run = ok`（无 `error:`），报告写「遗留：无」，独立核验实测有 2 处未入库**：
-
-```
- M SKILL.md                                        ← 上一轮点名的「§陷阱 44」新增段
- M references/shared-proxy-service-pitfalls.md      ← 上一轮点名的「§陷阱 44」新增 section
-```
-
-⇒ **上一轮自己写进报告的「新增物」，恰恰就是它没入库的东西**（根因：新增物排在 commit 之后）。
-⇒ **本库已连续两轮（11-21、11-22）踩同一个坑** ⇒ 这不是偶发，是**结构性缺陷**。
-
-**⇒ 轮次第 0 步（读完上一轮待办之后）必须先跑的三条**：
-
-```bash
-cd ~/.hermes/skills/productivity/inexbot-open-knowledge-base
-git status -sb          # ① 工作树脏不脏？脏 ⇒ 上一轮有东西没入库
-git log --oneline -3    # ② 上一轮的 commit 在不在历史里？
-git ls-files --others --exclude-standard   # ③ 有没有「报告点名但从没 add」的新增物
-```
-
-**⇒ 收尾（第 7 步）必须逐个核验「报告点名的每个新增物」**，而不是只看「主体工作已入库」：
-
-```bash
-for f in <报告点名的每个新增物>; do
-  git cat-file -e <commit>:$f 2>/dev/null && echo "OK  $f" || echo "FAIL $f"
-done
-git status --short                              # 必须为空
-git ls-files --others --exclude-standard         # 必须为空（无未跟踪）
-git merge-base --is-ancestor <commit> refs/remotes/sshcheck/main && echo "IN remote"
-```
-
+> 🔴 **§陷阱 44 在本库再次复现（2026-11-23 实测）—— 升级为「轮次第 0 步硬动作」**
+>
+> **11-22 那轮 `Last run = ok`（无 `error:`），报告写「遗留：无」，独立核验实测有 2 处未入库**：
+>
+> ```
+>  M SKILL.md                                        ← 上一轮点名的「§陷阱 44」新增段
+>  M references/shared-proxy-service-pitfalls.md      ← 上一轮点名的「§陷阱 44」新增 section
+> ```
+>
+> ⇒ **上一轮自己写进报告的「新增物」，恰恰就是它没入库的东西**（根因：新增物排在 commit 之后）。
+> ⇒ **本库已连续两轮（11-21、11-22）踩同一个坑** ⇒ 这不是偶发，是**结构性缺陷**。
+>
+> **⇒ 轮次第 0 步（读完上一轮待办之后）必须先跑的三条**：
+>
+> ```bash
+> cd ~/.hermes/skills/productivity/inexbot-open-knowledge-base
+> git status -sb          # ① 工作树脏不脏？脏 ⇒ 上一轮有东西没入库
+> git log --oneline -3    # ② 上一轮的 commit 在不在历史里？
+> git ls-files --others --exclude-standard   # ③ 有没有「报告点名但从没 add」的新增物
+> ```
+>
+> **⇒ 收尾（第 7 步）必须逐个核验「报告点名的每个新增物」**，而不是只看「主体工作已入库」：
+>
+> ```bash
+> for f in <报告点名的每个新增物>; do
+>   git cat-file -e <commit>:$f 2>/dev/null && echo "OK  $f" || echo "FAIL $f"
+> done
+> git status --short                              # 必须为空
+> git ls-files --others --exclude-standard         # 必须为空（无未跟踪）
+> git merge-base --is-ancestor <commit> refs/remotes/sshcheck/main && echo "IN remote"
+> ```
+>
 > 💡 **这条比 §陷阱 14 强**：陷阱 14 的前提是「上一轮带 `error:`」，
 > **本条的前提是「上一轮根本没被打断」** —— 后者更危险，因为**没有任何信号提示你要去查**。
 > ⇒ **唯一可靠的做法是把它固化成「第 0 步无条件执行的三条命令」**，而不是「看情况查」。
@@ -1955,10 +1968,22 @@ git merge-base --is-ancestor <commit> refs/remotes/sshcheck/main && echo "IN rem
 > 不碰未跟踪文件** ⇒ 报告点名的 `??` 新增物**每轮都被漏掉**。
 > ⇒ **收尾一律用 `git add -A`**；核验时 `git ls-files --others --exclude-standard`
 > **必须为空**（这一步专门抓「新增物漏 add」）。
-> ⭐ **另**：姊妹 KB 会**主动吸收**我们的超集（共享文件双向流动）⇒
-> **「姊妹比我新」不等于「该 cp 覆盖」**，唯一判据仍是「独有行集合」（§陷阱 23）。
-> 完整推导、逐条核验清单、姊妹吸收超集的判读表见
-> **`references/cron-completion-discipline.md`**。
+> 🔴 **2026-11-26 / 11-27：已连续六轮复现**（11-21 的 5 处 / 11-22 的 2 处 /
+> 11-23 的 4 处 / 11-24 的 2 处 / 11-25 的 7 处 / **11-26 的 1 处**）。
+> **11-26 那轮尤其值得记**：它的 `Last run` = **`ok`**、报告写「遗留：无」，
+> 但留下了 **1 个未跟踪文件** `references/skill-manage-patch-verification.md`
+> —— **内容完全有效**（记录 `skill_manage patch` 的「假失败」误报），
+> **只是从未 `git add`** ⇒ 本轮补齐入库。
+> ⇒ **「报告点名的每个新增物」逐个核验**这一步，本轮**真的救回了一个文件**。
+>
+> ⚠️ **2026-11-27 的另一半教训：半截的改动比没改动更危险** ——
+> 本轮在**收尾阶段**（commit 之后）才发现 `check_proxy_health.py` 的判据有问题
+> （详见 `references/proxy-health-baseline-semantics.md`），于是**在 commit 之后**又改了它
+> ⇒ 重演了同一个结构性缺陷（新增物排在 commit 之后）。
+> ⇒ **纪律：收尾阶段发现要改代码 ⇒ 改完必须再走一遍「改 → commit → push → 核验」**，
+> **不要把「报告已经写完了」当作「工作已经结束了」**。
+> ⇒ **更根本的做法**：把「health 检查的判据」这类**每轮都会跑的东西**的改动
+> **提前到轮次中段做**，别留到收尾。
 >
 > 📌 **本 skill 自身的更新记录**（每轮改了 SKILL.md / references 的条目清单与依据）见
 > **`references/crawl-state-2026-11-23-skill-updates.md`** ——
